@@ -26,12 +26,20 @@ export const defineUserModel = (sequelize) => {
         },
         comment: 'User display name - stored locally for better performance',
       },
-      // App-specific role (separate from Firebase custom claims)
-      appRole: {
-        type: DataTypes.ENUM('user', 'admin', 'moderator', 'manager', 'editor'),
+      // System-wide role (for super admins and system management)
+      systemRole: {
+        type: DataTypes.ENUM('super_admin', 'system_admin', 'user'),
         allowNull: false,
         defaultValue: 'user',
-        comment: 'Application-specific role for authorization',
+        comment: 'Global system role - independent of organizations',
+      },
+      
+      // Legacy app role (kept for backward compatibility)
+      appRole: {
+        type: DataTypes.ENUM('user', 'admin', 'moderator', 'manager', 'editor'),
+        allowNull: true, // Made optional for multi-tenant
+        defaultValue: 'user',
+        comment: 'Legacy application role - use organization roles instead',
       },
       isActive: {
         type: DataTypes.BOOLEAN,
@@ -182,6 +190,106 @@ export const defineUserModel = (sequelize) => {
         ...options.where,
         deletedAt: { [Op.ne]: null }
       }
+    });
+  };
+
+  // Multi-tenant instance methods
+  User.prototype.isSuperAdmin = function() {
+    return this.systemRole === 'super_admin';
+  };
+
+  User.prototype.isSystemAdmin = function() {
+    return ['super_admin', 'system_admin'].includes(this.systemRole);
+  };
+
+  User.prototype.getOrganizations = async function(includeInactive = false) {
+    const OrganizationUser = sequelize.models.OrganizationUser;
+    if (!OrganizationUser) return [];
+    
+    const where = { userId: this.id };
+    if (!includeInactive) {
+      where.isActive = true;
+    }
+    
+    return await OrganizationUser.findAll({
+      where,
+      include: [{
+        model: sequelize.models.Organization,
+        as: 'Organization',
+        where: { isActive: true },
+      }],
+      order: [['joinedAt', 'DESC']],
+    });
+  };
+
+  User.prototype.getOrganizationRole = async function(organizationId) {
+    const OrganizationUser = sequelize.models.OrganizationUser;
+    if (!OrganizationUser) return null;
+    
+    const membership = await OrganizationUser.findOne({
+      where: {
+        userId: this.id,
+        organizationId,
+        isActive: true,
+      },
+    });
+    
+    return membership ? membership.role : null;
+  };
+
+  User.prototype.hasOrganizationAccess = async function(organizationId) {
+    // Super admins have access to all organizations
+    if (this.isSuperAdmin()) {
+      return true;
+    }
+    
+    const OrganizationUser = sequelize.models.OrganizationUser;
+    if (!OrganizationUser) return false;
+    
+    const membership = await OrganizationUser.findOne({
+      where: {
+        userId: this.id,
+        organizationId,
+        isActive: true,
+      },
+    });
+    
+    return !!membership;
+  };
+
+  User.prototype.canManageOrganization = async function(organizationId) {
+    // Super admins can manage all organizations
+    if (this.isSuperAdmin()) {
+      return true;
+    }
+    
+    const OrganizationUser = sequelize.models.OrganizationUser;
+    if (!OrganizationUser) return false;
+    
+    const membership = await OrganizationUser.findOne({
+      where: {
+        userId: this.id,
+        organizationId,
+        isActive: true,
+      },
+    });
+    
+    return membership && ['owner', 'admin'].includes(membership.role);
+  };
+
+  // Multi-tenant static methods
+  User.findByFirebaseUid = function(firebaseUid) {
+    return this.findOne({
+      where: { firebaseUid, isActive: true },
+    });
+  };
+
+  User.findSuperAdmins = function() {
+    return this.findAll({
+      where: { 
+        systemRole: 'super_admin',
+        isActive: true 
+      },
     });
   };
 

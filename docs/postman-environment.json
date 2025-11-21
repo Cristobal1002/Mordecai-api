@@ -43,6 +43,30 @@
       "value": "",
       "description": "Firebase UID of target user for admin operations",
       "enabled": true
+    },
+    {
+      "key": "TENANT_SLUG",
+      "value": "acme-corp",
+      "description": "Organization slug for multi-tenant requests",
+      "enabled": true
+    },
+    {
+      "key": "ORGANIZATION_ID",
+      "value": "",
+      "description": "Organization UUID for API requests",
+      "enabled": true
+    },
+    {
+      "key": "PARENT_ORG_ID",
+      "value": "",
+      "description": "Parent organization UUID for creating sub-organizations",
+      "enabled": true
+    },
+    {
+      "key": "USER_FIREBASE_UID",
+      "value": "",
+      "description": "Firebase UID of user for member management operations",
+      "enabled": true
     }
   ],
   "_postman_variable_scope": "environment"

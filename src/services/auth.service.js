@@ -31,7 +31,7 @@ class AuthService {
     }
   }
 
-  async registerWithEmail(userData) {
+  async registerWithEmail(userData, organizationSlug = null) {
     const { email, password, firstName, lastName, displayName } = userData;
 
     // Use provided displayName or construct from firstName/lastName
@@ -56,16 +56,54 @@ class AuthService {
     const user = await User.create({
       firebaseUid: firebaseUser.uid,
       displayName: finalDisplayName,
-      appRole: 'user',
+      systemRole: 'user', // Use systemRole instead of appRole
+      appRole: 'user', // Keep for backward compatibility
       isActive: true,
       lastLoginAt: new Date(),
     });
+
+    // If organization slug is provided, add user to organization
+    if (organizationSlug && config.features.multiTenant) {
+      try {
+        const { Organization, OrganizationUser } = await import('../models/index.js');
+        
+        if (Organization && OrganizationUser) {
+          const organization = await Organization.findOne({
+            where: { slug: organizationSlug, isActive: true }
+          });
+          
+          if (organization) {
+            await OrganizationUser.create({
+              userId: user.id,
+              organizationId: organization.id,
+              role: 'employee', // Default role for new registrations
+              isActive: true,
+              joinedAt: new Date(),
+            });
+            
+            logger.info({
+              userId: user.id,
+              organizationId: organization.id,
+              organizationSlug
+            }, 'User automatically added to organization during registration');
+          }
+        }
+      } catch (error) {
+        // Don't fail registration if organization assignment fails
+        logger.warn({
+          error,
+          userId: user.id,
+          organizationSlug
+        }, 'Failed to add user to organization during registration');
+      }
+    }
 
     // Generate tokens
     const tokens = this.generateTokens({
       userId: user.id,
       firebaseUid: user.firebaseUid,
-      appRole: user.appRole,
+      systemRole: user.systemRole,
+      appRole: user.appRole, // Keep for backward compatibility
     });
 
     return {
@@ -114,7 +152,8 @@ class AuthService {
     const tokens = this.generateTokens({
       userId: user.id,
       firebaseUid: user.firebaseUid,
-      appRole: user.appRole,
+      systemRole: user.systemRole,
+      appRole: user.appRole, // Keep for backward compatibility
     });
 
     return {
@@ -154,7 +193,8 @@ class AuthService {
       user = await User.create({
         firebaseUid: uid,
         displayName: name || 'Google User', // Fallback if no name provided
-        appRole: 'user',
+        systemRole: 'user', // Use systemRole
+        appRole: 'user', // Keep for backward compatibility
         isActive: true,
         lastLoginAt: new Date(),
       });
@@ -164,7 +204,8 @@ class AuthService {
     const tokens = this.generateTokens({
       userId: user.id,
       firebaseUid: user.firebaseUid,
-      appRole: user.appRole,
+      systemRole: user.systemRole,
+      appRole: user.appRole, // Keep for backward compatibility
     });
 
     return {
@@ -186,7 +227,8 @@ class AuthService {
     const tokens = this.generateTokens({
       userId: user.id,
       firebaseUid: user.firebaseUid,
-      appRole: user.appRole,
+      systemRole: user.systemRole,
+      appRole: user.appRole, // Keep for backward compatibility
     });
 
     return {

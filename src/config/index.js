@@ -113,5 +113,26 @@ export const config = {
     maxLoginAttempts: Number(process.env.MAX_LOGIN_ATTEMPTS) || 5,
     lockoutTime: Number(process.env.LOCKOUT_TIME) || 30 * 60 * 1000, // 30 minutes
   },
+  
+  // Multi-tenant configuration
+  features: {
+    multiTenant: process.env.ENABLE_MULTI_TENANT === 'true',
+    legacyMode: process.env.LEGACY_MODE === 'true',
+  },
+  
+  // Database sync configuration (granular control)
+  dbSync: {
+    users: process.env.SYNC_USERS !== 'false',           // Default: true
+    organizations: process.env.SYNC_ORGANIZATIONS === 'true',  // Default: false
+    organizationUsers: process.env.SYNC_ORG_USERS === 'true'   // Default: false
+  },
+  
+  // Multi-tenant settings
+  tenant: {
+    defaultOrgSlug: process.env.DEFAULT_ORG_SLUG || 'default',
+    maxOrgsPerUser: Number(process.env.MAX_ORGS_PER_USER) || 10,
+    allowOrgCreation: process.env.ALLOW_ORG_CREATION !== 'false',
+    requireOrgInvite: process.env.REQUIRE_ORG_INVITE === 'true',
+  },
 };
 

@@ -1,8 +1,8 @@
 {
   "info": {
     "name": "Mordecai API",
-    "description": "Complete Mordecai authentication system with Firebase, email/password and Google sign-in",
-    "version": "1.0.0",
+    "description": "Complete Mordecai authentication system with Firebase auth and multi-tenant organization management",
+    "version": "2.0.0",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -536,6 +536,497 @@
               "path": ["api", "{{API_VERSION}}", "users", "stats"]
             },
             "description": "Get user statistics including deleted users (admin/moderator only)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Multi-Tenant Organizations",
+      "item": [
+        {
+          "name": "Create Organization",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Corporation\",\n  \"slug\": \"acme-corp\",\n  \"description\": \"Leading provider of innovative solutions\",\n  \"settings\": {\n    \"features\": {\n      \"userManagement\": true,\n      \"reporting\": true,\n      \"apiAccess\": false\n    },\n    \"branding\": {\n      \"primaryColor\": \"#007bff\",\n      \"logo\": null\n    }\n  },\n  \"contactInfo\": {\n    \"email\": \"contact@acme-corp.com\",\n    \"phone\": \"+1-555-0123\",\n    \"address\": \"123 Business St, City, State 12345\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/organizations",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "organizations"]
+            },
+            "description": "Create a new organization (user becomes owner)"
+          }
+        },
+        {
+          "name": "Create Sub-Organization",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Europe\",\n  \"slug\": \"acme-europe\",\n  \"description\": \"European division of Acme Corporation\",\n  \"parentId\": \"{{PARENT_ORG_ID}}\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/organizations",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "organizations"]
+            },
+            "description": "Create a sub-organization under a parent organization"
+          }
+        },
+        {
+          "name": "Get My Organizations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/organizations/my-organizations",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "organizations", "my-organizations"]
+            },
+            "description": "Get all organizations the user belongs to"
+          }
+        },
+        {
+          "name": "Get Organization Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}"]
+            },
+            "description": "Get organization details with user membership info"
+          }
+        },
+        {
+          "name": "Update Organization",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Corporation Updated\",\n  \"description\": \"Updated description for Acme Corporation\",\n  \"settings\": {\n    \"features\": {\n      \"userManagement\": true,\n      \"reporting\": true,\n      \"apiAccess\": true\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}"]
+            },
+            "description": "Update organization details (owners/admins only)"
+          }
+        },
+        {
+          "name": "Get Organization Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/dashboard",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "dashboard"]
+            },
+            "description": "Get organization dashboard data and statistics"
+          }
+        },
+        {
+          "name": "Get Organization Hierarchy",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/hierarchy",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "hierarchy"]
+            },
+            "description": "Get organization hierarchy with parent and sub-organizations"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Organization Members",
+      "item": [
+        {
+          "name": "Get Organization Members",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/members?page=1&limit=20",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "members"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page"
+                },
+                {
+                  "key": "role",
+                  "value": "",
+                  "description": "Filter by role: owner, admin, manager, employee, viewer, guest",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Search by name or email",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "description": "Filter by active status: true/false",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get paginated list of organization members with filtering"
+          }
+        },
+        {
+          "name": "Invite User to Organization",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userFirebaseUid\": \"firebase-user-uid-here\",\n  \"role\": \"employee\",\n  \"department\": \"Engineering\",\n  \"jobTitle\": \"Software Developer\",\n  \"permissions\": {\n    \"reports\": {\n      \"read\": true,\n      \"write\": false\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/members/invite",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "members", "invite"]
+            },
+            "description": "Invite a user to join the organization (owners/admins/managers only)"
+          }
+        },
+        {
+          "name": "Update User Role",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"manager\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/members/{{USER_FIREBASE_UID}}/role",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "members", "{{USER_FIREBASE_UID}}", "role"]
+            },
+            "description": "Update a user's role in the organization (owners/admins/managers only)"
+          }
+        },
+        {
+          "name": "Remove User from Organization",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/members/{{USER_FIREBASE_UID}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "members", "{{USER_FIREBASE_UID}}"]
+            },
+            "description": "Remove a user from the organization (owners/admins/managers only)"
+          }
+        },
+        {
+          "name": "Search Organization Members",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/members?search=john&limit=10",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "members"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "john",
+                  "description": "Search term"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Limit results"
+                }
+              ]
+            },
+            "description": "Search organization members by name or email"
+          }
+        },
+        {
+          "name": "Filter Members by Role",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/members?role=admin&isActive=true",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "members"],
+              "query": [
+                {
+                  "key": "role",
+                  "value": "admin",
+                  "description": "Filter by role"
+                },
+                {
+                  "key": "isActive",
+                  "value": "true",
+                  "description": "Filter by active status"
+                }
+              ]
+            },
+            "description": "Filter organization members by role and status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Organization Settings",
+      "item": [
+        {
+          "name": "Get Organization Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/settings",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "settings"]
+            },
+            "description": "Get organization settings and configuration (owners/admins only)"
+          }
+        },
+        {
+          "name": "Update Organization Settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"settings\": {\n    \"features\": {\n      \"userManagement\": true,\n      \"reporting\": true,\n      \"apiAccess\": true\n    },\n    \"branding\": {\n      \"primaryColor\": \"#28a745\",\n      \"logo\": \"https://example.com/logo.png\"\n    },\n    \"limits\": {\n      \"maxUsers\": 500,\n      \"maxSubOrgs\": 20\n    }\n  },\n  \"contactInfo\": {\n    \"email\": \"support@acme-corp.com\",\n    \"phone\": \"+1-555-0199\",\n    \"address\": \"456 Updated St, New City, State 54321\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/settings",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "settings"]
+            },
+            "description": "Update organization settings and contact information (owners/admins only)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Permission-Based Endpoints",
+      "item": [
+        {
+          "name": "Get Organization Reports",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/reports",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "reports"]
+            },
+            "description": "Get organization reports (requires reports.read permission)"
+          }
+        },
+        {
+          "name": "Get Organization Billing",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/{{TENANT_SLUG}}/billing",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "{{TENANT_SLUG}}", "billing"]
+            },
+            "description": "Get organization billing information (requires billing.read permission)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Multi-Tenant Examples",
+      "item": [
+        {
+          "name": "Access via URL Parameter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/org/acme-corp/dashboard",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "org", "acme-corp", "dashboard"]
+            },
+            "description": "Access organization via URL parameter (most common)"
+          }
+        },
+        {
+          "name": "Access via Header",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "acme-corp"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/organizations/dashboard",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "organizations", "dashboard"]
+            },
+            "description": "Access organization via X-Tenant-ID header"
+          }
+        },
+        {
+          "name": "Complete Workflow Example",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/organizations/my-organizations",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "organizations", "my-organizations"]
+            },
+            "description": "Step 1: Get user's organizations, then use TENANT_SLUG in other requests"
           }
         }
       ]

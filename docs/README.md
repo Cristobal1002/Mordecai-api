@@ -159,6 +159,9 @@ src/
 - [Users List API Guide](./USERS_LIST_API.md) 👥 **NEW**
 - [Users List Examples](./USERS_LIST_EXAMPLES.md) 💡 **NEW**
 - [Display Name Implementation](./DISPLAY_NAME_IMPLEMENTATION.md) 📝 **NEW**
+- [Multi-Tenant Architecture Guide](./MULTI_TENANT_GUIDE.md) 🏢 **NEW**
+- [Multi-Tenant Environment Setup](./MULTI_TENANT_ENV_EXAMPLE.md) ⚙️ **NEW**
+- [Postman Multi-Tenant Guide](./POSTMAN_MULTI_TENANT_GUIDE.md) 📮 **NEW**
 - [Complete .env Template](./COMPLETE_ENV_TEMPLATE.md) ⭐
 - [Environment Variables Guide](./ENV_VARIABLES.md)
 - [Firebase Environment Setup](./FIREBASE_ENV_SETUP.md)
