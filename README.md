@@ -1,4 +1,4 @@
-# Node - Sequelize boilerplate 
+# Mordecai-api
 
 Backend de consumo para integración Siigo y comercios electrónicos.
 
@@ -110,3 +110,4 @@ npm test
 ## 📄 Licencia
 
 ISC
+
