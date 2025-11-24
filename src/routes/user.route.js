@@ -34,6 +34,17 @@ const usersListValidation = [
   query('dateTo').optional().isISO8601().withMessage('dateTo must be a valid ISO date'),
 ];
 
+const userOrganizationsValidation = [
+  param('firebaseUid').notEmpty().withMessage('Firebase UID is required'),
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('includeInactive').optional().isBoolean().withMessage('includeInactive must be a boolean'),
+  query('role').optional().isIn(['owner', 'admin', 'manager', 'employee', 'viewer', 'guest']).withMessage('Invalid role filter'),
+  query('search').optional().isLength({ min: 1, max: 100 }).withMessage('Search term must be between 1 and 100 characters'),
+  query('sortBy').optional().isIn(['joinedAt', 'name', 'createdAt', 'role']).withMessage('Invalid sort field'),
+  query('sortOrder').optional().isIn(['ASC', 'DESC', 'asc', 'desc']).withMessage('Sort order must be ASC or DESC'),
+];
+
 /**
  * @route   GET /api/v1/users/profile
  * @desc    Get current user profile (with Firebase data)
@@ -112,5 +123,18 @@ router.get('/deleted', authenticate, usersListValidation, validateRequest, userC
  * @access  Private (System Admin)
  */
 router.get('/stats', authenticate, userController.getUserStats);
+
+/**
+ * @route   GET /api/v1/users/:firebaseUid/organizations
+ * @desc    Get organizations for a specific user (own user or super admin)
+ * @access  Private (Own user or Super Admin)
+ * @query   page, limit, includeInactive, role, search, sortBy, sortOrder
+ */
+router.get('/:firebaseUid/organizations', 
+  authenticate, 
+  userOrganizationsValidation, 
+  validateRequest, 
+  userController.getUserOrganizations
+);
 
 export { router as user };

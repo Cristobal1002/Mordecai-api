@@ -9,7 +9,7 @@ The Users List API provides comprehensive functionality to query, filter, search
 ### 1. Get Users List (Advanced)
 
 **Endpoint:** `GET /api/v1/users`  
-**Access:** Admin/Moderator only  
+**Access:** System Admin only  
 **Description:** Get paginated users list with advanced filtering, search, and sorting capabilities.
 
 #### Query Parameters
@@ -18,10 +18,10 @@ The Users List API provides comprehensive functionality to query, filter, search
 |-----------|------|---------|-------------|
 | `page` | integer | 1 | Page number (min: 1) |
 | `limit` | integer | 20 | Results per page (1-100) |
-| `appRole` | string | - | Filter by role: `user`, `admin`, `moderator`, `manager`, `editor` |
+| `systemRole` | string | - | Filter by system role: `super_admin`, `system_admin`, `user` |
 | `isActive` | boolean | - | Filter by active status |
-| `search` | string | - | Search in email, displayName, appRole, firebaseUid |
-| `sortBy` | string | createdAt | Sort field: `createdAt`, `updatedAt`, `lastLoginAt`, `appRole` |
+| `search` | string | - | Search in email, displayName, systemRole, firebaseUid |
+| `sortBy` | string | createdAt | Sort field: `createdAt`, `updatedAt`, `lastLoginAt`, `systemRole` |
 | `sortOrder` | string | DESC | Sort order: `ASC` or `DESC` |
 | `includeDeleted` | boolean | false | Include soft deleted users |
 | `dateFrom` | string | - | Filter users created after this date (ISO format) |
@@ -37,8 +37,8 @@ Authorization: Bearer <admin-token>
 
 **Advanced Filtering:**
 ```http
-GET /api/v1/users?appRole=user&isActive=true&sortBy=lastLoginAt&sortOrder=DESC&limit=50
-Authorization: Bearer <admin-token>
+GET /api/v1/users?systemRole=user&isActive=true&sortBy=lastLoginAt&sortOrder=DESC&limit=50
+Authorization: Bearer <system-admin-token>
 ```
 
 **Search Users:**
@@ -71,7 +71,7 @@ Authorization: Bearer <admin-token>
         "id": "uuid",
         "firebaseUid": "firebase-uid",
         "displayName": "John Doe", // From PostgreSQL (prioritized) or Firebase fallback
-        "appRole": "user",
+        "systemRole": "user",
         "isActive": true,
         "lastLoginAt": "2024-01-15T10:30:00Z",
         "createdAt": "2024-01-01T00:00:00Z",
@@ -98,7 +98,7 @@ Authorization: Bearer <admin-token>
       "hasPrev": false
     },
     "filters": {
-      "appRole": "user",
+      "systemRole": "user",
       "isActive": true,
       "search": null,
       "sortBy": "createdAt",
@@ -119,7 +119,7 @@ Authorization: Bearer <admin-token>
 ### 2. Get Users Overview
 
 **Endpoint:** `GET /api/v1/users/overview`  
-**Access:** Admin/Moderator only  
+**Access:** System Admin only  
 **Description:** Get dashboard summary with user statistics and distributions.
 
 #### Example Request
@@ -143,11 +143,9 @@ Authorization: Bearer <admin-token>
       "recentSignups": 25
     },
     "roleDistribution": {
-      "user": 900,
-      "moderator": 15,
-      "manager": 10,
-      "editor": 20,
-      "admin": 5
+      "super_admin": 2,
+      "system_admin": 8,
+      "user": 990
     },
     "statusDistribution": {
       "active": 950,
@@ -157,7 +155,8 @@ Authorization: Bearer <admin-token>
       {
         "id": "uuid",
         "firebaseUid": "firebase-uid",
-        "appRole": "user",
+        "systemRole": "user",
+        "displayName": "John Doe",
         "isActive": true,
         "createdAt": "2024-01-15T10:30:00Z"
       }
@@ -166,7 +165,8 @@ Authorization: Bearer <admin-token>
       {
         "id": "uuid",
         "firebaseUid": "firebase-uid",
-        "appRole": "user",
+        "systemRole": "user",
+        "displayName": "John Doe",
         "lastLoginAt": "2024-01-15T10:30:00Z"
       }
     ]
@@ -187,7 +187,7 @@ Authorization: Bearer <admin-token>
 
 ```sql
 -- Existing indexes for optimal performance
-CREATE INDEX idx_users_app_role ON users(app_role);
+CREATE INDEX idx_users_system_role ON users(system_role);
 CREATE INDEX idx_users_is_active ON users(is_active);
 CREATE INDEX idx_users_created_at ON users(created_at);
 CREATE INDEX idx_users_last_login ON users(last_login_at);
@@ -220,8 +220,8 @@ const users = await fetch('/api/v1/users?page=1&limit=25&sortBy=lastLoginAt');
 // Search users
 const searchResults = await fetch('/api/v1/users?search=john&limit=10');
 
-// Filter by role
-const admins = await fetch('/api/v1/users?appRole=admin&sortBy=createdAt');
+// Filter by system role
+const systemAdmins = await fetch('/api/v1/users?systemRole=system_admin&sortBy=createdAt');
 ```
 
 ### 3. Reporting & Analytics
@@ -284,7 +284,7 @@ const inactiveUsers = await fetch('/api/v1/users?isActive=false&sortBy=lastLogin
 ## Security Features
 
 ### 1. Role-Based Access
-- Only `admin` and `moderator` roles can access
+- Only `super_admin` and `system_admin` roles can access
 - Verified through JWT token and database lookup
 
 ### 2. Data Protection
@@ -347,7 +347,7 @@ export function useUsersList() {
     page: 1,
     limit: 20,
     search: '',
-    appRole: '',
+    systemRole: '',
     sortBy: 'createdAt',
     sortOrder: 'DESC'
   });

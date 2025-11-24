@@ -305,18 +305,58 @@ All error responses follow this format:
 
 ## User Management Endpoints
 
+### Get User Profile
+
+**Endpoint:** `GET /api/v1/users/profile`  
+**Access:** Authenticated users (own profile)
+
+**Description:** Get complete user profile combining PostgreSQL and Firebase data.
+
+**Headers:**
+```
+Authorization: Bearer <access-token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User profile retrieved successfully",
+  "data": {
+    "user": {
+      "id": "uuid",
+      "firebaseUid": "firebase-uid",
+      "systemRole": "user",
+      "displayName": "John Doe",
+      "isActive": true,
+      "lastLoginAt": "2024-01-15T10:30:00Z",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-15T10:30:00Z",
+      "email": "user@example.com",
+      "photoURL": "https://...",
+      "emailVerified": true,
+      "providerData": [...],
+      "metadata": {
+        "creationTime": "2024-01-01T00:00:00Z",
+        "lastSignInTime": "2024-01-15T10:30:00Z"
+      }
+    }
+  }
+}
+```
+
 ### Get Users List (Advanced)
 
 **Endpoint:** `GET /api/v1/users`  
-**Access:** Admin/Moderator only
+**Access:** System Admin only
 
 **Query Parameters:**
 - `page` (optional): Page number (default: 1)
 - `limit` (optional): Items per page (default: 20, max: 100)
-- `appRole` (optional): Filter by role (`user`, `admin`, `moderator`, `manager`, `editor`)
+- `systemRole` (optional): Filter by system role (`super_admin`, `system_admin`, `user`)
 - `isActive` (optional): Filter by status (true/false)
-- `search` (optional): Search in email, displayName, appRole, firebaseUid
-- `sortBy` (optional): Sort field (`createdAt`, `updatedAt`, `lastLoginAt`, `appRole`)
+- `search` (optional): Search in email, displayName, systemRole, firebaseUid
+- `sortBy` (optional): Sort field (`createdAt`, `updatedAt`, `lastLoginAt`, `systemRole`)
 - `sortOrder` (optional): Sort order (`ASC`, `DESC`)
 - `includeDeleted` (optional): Include soft deleted users (default: false)
 - `dateFrom` (optional): Filter users created after this date (ISO format)
@@ -333,7 +373,7 @@ All error responses follow this format:
         "id": "uuid",
         "firebaseUid": "firebase-uid",
         "displayName": "John Doe", // From PostgreSQL (prioritized) or Firebase fallback
-        "appRole": "user",
+        "systemRole": "user",
         "isActive": true,
         "lastLoginAt": "2024-01-15T10:30:00Z",
         "createdAt": "2024-01-01T00:00:00Z",
@@ -358,7 +398,7 @@ All error responses follow this format:
       "hasPrev": false
     },
     "filters": {
-      "appRole": "user",
+      "systemRole": "user",
       "isActive": true,
       "search": null,
       "sortBy": "createdAt",
@@ -376,10 +416,114 @@ All error responses follow this format:
 }
 ```
 
+### Get User Organizations
+
+**Endpoint:** `GET /api/v1/users/:firebaseUid/organizations`  
+**Access:** Own user or Super Admin
+
+**Description:** Get paginated list of organizations for a specific user with advanced filtering, search, and sorting capabilities.
+
+**Path Parameters:**
+- `firebaseUid` (required): Firebase UID of the user
+
+**Query Parameters:**
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 20, max: 100)
+- `includeInactive` (optional): Include inactive memberships (default: false)
+- `role` (optional): Filter by organization role (`owner`, `admin`, `manager`, `employee`, `viewer`, `guest`)
+- `search` (optional): Search in organization name, slug, or description
+- `sortBy` (optional): Sort field (`joinedAt`, `name`, `createdAt`, `role`) (default: `joinedAt`)
+- `sortOrder` (optional): Sort order (`ASC`, `DESC`) (default: `DESC`)
+
+**Permissions:**
+- Users can view their own organizations
+- Super admins can view any user's organizations
+
+**Example Request:**
+```http
+GET /api/v1/users/user-firebase-uid-here/organizations?page=1&limit=10&role=admin&sortBy=name&sortOrder=ASC
+Authorization: Bearer <access-token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User organizations retrieved successfully",
+  "data": {
+    "organizations": [
+      {
+        "id": "uuid",
+        "name": "Acme Corporation",
+        "slug": "acme-corp",
+        "description": "Leading provider of innovative solutions",
+        "parentId": null,
+        "settings": {
+          "features": {
+            "userManagement": true,
+            "reporting": true,
+            "apiAccess": false
+          },
+          "branding": {
+            "primaryColor": "#007bff",
+            "logo": null
+          }
+        },
+        "contactInfo": {
+          "email": "contact@acme-corp.com"
+        },
+        "isActive": true,
+        "planType": "free",
+        "foundedAt": "2024-01-01T00:00:00Z",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "updatedAt": "2024-01-01T00:00:00Z",
+        "ParentOrganization": null,
+        "membership": {
+          "id": "uuid",
+          "role": "owner",
+          "permissions": {
+            "users": { "read": true, "write": true, "delete": true, "invite": true },
+            "organizations": { "read": true, "write": true, "delete": true, "settings": true }
+          },
+          "isActive": true,
+          "joinedAt": "2024-01-01T00:00:00Z",
+          "lastAccessAt": "2024-01-15T10:30:00Z",
+          "department": "Engineering",
+          "jobTitle": "CTO",
+          "invitedBy": null,
+          "invitedAt": null
+        }
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "total": 5,
+      "pages": 1,
+      "hasNext": false,
+      "hasPrev": false
+    },
+    "filters": {
+      "includeInactive": false,
+      "role": "admin",
+      "search": null,
+      "sortBy": "name",
+      "sortOrder": "ASC"
+    },
+    "user": {
+      "id": "uuid",
+      "firebaseUid": "user-firebase-uid-here",
+      "displayName": "John Doe",
+      "systemRole": "user"
+    }
+  }
+}
+```
+
 ### Get Users Overview
 
 **Endpoint:** `GET /api/v1/users/overview`  
-**Access:** Admin/Moderator only
+**Access:** System Admin only
 
 **Description:** Get dashboard summary with user statistics and distributions.
 
@@ -396,11 +540,9 @@ All error responses follow this format:
       "recentSignups": 25
     },
     "roleDistribution": {
-      "user": 900,
-      "moderator": 15,
-      "manager": 10,
-      "editor": 20,
-      "admin": 5
+      "super_admin": 2,
+      "system_admin": 8,
+      "user": 990
     },
     "statusDistribution": {
       "active": 950,
@@ -410,7 +552,8 @@ All error responses follow this format:
       {
         "id": "uuid",
         "firebaseUid": "firebase-uid",
-        "appRole": "user",
+        "systemRole": "user",
+        "displayName": "John Doe",
         "isActive": true,
         "createdAt": "2024-01-15T10:30:00Z"
       }
@@ -419,7 +562,8 @@ All error responses follow this format:
       {
         "id": "uuid",
         "firebaseUid": "firebase-uid",
-        "appRole": "user",
+        "systemRole": "user",
+        "displayName": "John Doe",
         "lastLoginAt": "2024-01-15T10:30:00Z"
       }
     ]

@@ -226,9 +226,9 @@
                   "description": "Items per page (1-100, default: 20)"
                 },
                 {
-                  "key": "appRole",
+                  "key": "systemRole",
                   "value": "",
-                  "description": "Filter by role: user, admin, moderator, manager, editor",
+                  "description": "Filter by system role: super_admin, system_admin, user",
                   "disabled": true
                 },
                 {
@@ -240,13 +240,13 @@
                 {
                   "key": "search",
                   "value": "",
-                  "description": "Search in email, displayName, appRole, firebaseUid",
+                  "description": "Search in email, displayName, systemRole, firebaseUid",
                   "disabled": true
                 },
                 {
                   "key": "sortBy",
                   "value": "createdAt",
-                  "description": "Sort field: createdAt, updatedAt, lastLoginAt, appRole"
+                  "description": "Sort field: createdAt, updatedAt, lastLoginAt, systemRole"
                 },
                 {
                   "key": "sortOrder",
@@ -273,7 +273,7 @@
                 }
               ]
             },
-            "description": "Get paginated list of users with advanced filtering, search, and sorting (admin/moderator only)"
+            "description": "Get paginated list of users with advanced filtering, search, and sorting (system admin only)"
           }
         },
         {
@@ -291,7 +291,7 @@
               "host": ["{{BASE_URL}}"],
               "path": ["api", "{{API_VERSION}}", "users", "overview"]
             },
-            "description": "Get dashboard summary with user statistics and distributions (admin/moderator only)"
+            "description": "Get dashboard summary with user statistics and distributions (system admin only)"
           }
         },
         {
@@ -335,14 +335,14 @@
               }
             ],
             "url": {
-              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/users?appRole=admin&sortBy=lastLoginAt&sortOrder=DESC",
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/users?systemRole=system_admin&sortBy=lastLoginAt&sortOrder=DESC",
               "host": ["{{BASE_URL}}"],
               "path": ["api", "{{API_VERSION}}", "users"],
               "query": [
                 {
-                  "key": "appRole",
-                  "value": "admin",
-                  "description": "Filter by role"
+                  "key": "systemRole",
+                  "value": "system_admin",
+                  "description": "Filter by system role"
                 },
                 {
                   "key": "sortBy",
@@ -395,7 +395,65 @@
           }
         },
         {
-          "name": "Update User Role (Admin)",
+          "name": "Get User Organizations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/users/{{TARGET_FIREBASE_UID}}/organizations?page=1&limit=20&sortBy=joinedAt&sortOrder=DESC",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "{{API_VERSION}}", "users", "{{TARGET_FIREBASE_UID}}", "organizations"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page (1-100, default: 20)"
+                },
+                {
+                  "key": "includeInactive",
+                  "value": "",
+                  "description": "Include inactive memberships: true/false",
+                  "disabled": true
+                },
+                {
+                  "key": "role",
+                  "value": "",
+                  "description": "Filter by role: owner, admin, manager, employee, viewer, guest",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Search in organization name, slug, or description",
+                  "disabled": true
+                },
+                {
+                  "key": "sortBy",
+                  "value": "joinedAt",
+                  "description": "Sort field: joinedAt, name, createdAt, role"
+                },
+                {
+                  "key": "sortOrder",
+                  "value": "DESC",
+                  "description": "Sort order: ASC, DESC"
+                }
+              ]
+            },
+            "description": "Get paginated list of organizations for a specific user with advanced filtering, search, and sorting (own user or super admin only)"
+          }
+        },
+        {
+          "name": "Update User System Role (Admin)",
           "request": {
             "method": "PUT",
             "header": [
@@ -410,14 +468,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"appRole\": \"moderator\"\n}"
+              "raw": "{\n  \"systemRole\": \"system_admin\"\n}"
             },
             "url": {
-              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/users/{{TARGET_FIREBASE_UID}}/role",
+              "raw": "{{BASE_URL}}/api/{{API_VERSION}}/users/{{TARGET_FIREBASE_UID}}/system-role",
               "host": ["{{BASE_URL}}"],
-              "path": ["api", "{{API_VERSION}}", "users", "{{TARGET_FIREBASE_UID}}", "role"]
+              "path": ["api", "{{API_VERSION}}", "users", "{{TARGET_FIREBASE_UID}}", "system-role"]
             },
-            "description": "Update user app role (admin only)"
+            "description": "Update user system role (super admin only)"
           }
         },
         {
@@ -435,7 +493,7 @@
               "host": ["{{BASE_URL}}"],
               "path": ["api", "{{API_VERSION}}", "users", "{{TARGET_FIREBASE_UID}}", "deactivate"]
             },
-            "description": "Deactivate user account (admin/moderator only)"
+            "description": "Deactivate user account (system admin only)"
           }
         },
         {
@@ -535,7 +593,7 @@
               "host": ["{{BASE_URL}}"],
               "path": ["api", "{{API_VERSION}}", "users", "stats"]
             },
-            "description": "Get user statistics including deleted users (admin/moderator only)"
+            "description": "Get user statistics including deleted users (system admin only)"
           }
         }
       ]

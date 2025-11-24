@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
 import { sequelize } from '../models/index.js';
 import { getAuth } from '../config/firebase.js';
-import { User } from '../models/index.js';
+import { User, Organization, OrganizationUser } from '../models/index.js';
 import { AuthenticationError, ValidationError } from '../errors/index.js';
 import { logger } from '../utils/logger.js';
 
@@ -639,6 +639,174 @@ class UserService {
       };
     } catch (error) {
       logger.error({ error, adminFirebaseUid }, 'Error getting deleted users list');
+      throw error;
+    }
+  }
+
+  /**
+   * Get organizations for a specific user (system admin function or own user)
+   */
+  async getUserOrganizations(userFirebaseUid, requesterFirebaseUid, options = {}) {
+    try {
+      // Find the target user
+      const targetUser = await User.findOne({ where: { firebaseUid: userFirebaseUid } });
+      if (!targetUser) {
+        throw new AuthenticationError('User not found');
+      }
+
+      // Find the requester
+      const requester = await User.findOne({ where: { firebaseUid: requesterFirebaseUid } });
+      if (!requester) {
+        throw new AuthenticationError('Requester not found');
+      }
+
+      // Check permissions: user can see their own orgs, or system admin can see any user's orgs
+      const canAccess = targetUser.firebaseUid === requester.firebaseUid || requester.isSuperAdmin();
+      if (!canAccess) {
+        throw new AuthenticationError('Insufficient permissions - can only view your own organizations');
+      }
+
+      const {
+        page = 1,
+        limit = 20,
+        includeInactive = false,
+        role,
+        search,
+        sortBy = 'joinedAt',
+        sortOrder = 'DESC'
+      } = options;
+
+      const offset = (page - 1) * limit;
+      
+      // Build where clause
+      const membershipWhere = {
+        userId: targetUser.id,
+      };
+
+      if (!includeInactive) {
+        membershipWhere.isActive = true;
+      }
+
+      if (role) {
+        membershipWhere.role = role;
+      }
+
+      // Build organization where clause for search
+      const orgWhere = { isActive: true };
+      if (search) {
+        orgWhere[Op.or] = [
+          { name: { [Op.iLike]: `%${search}%` } },
+          { slug: { [Op.iLike]: `%${search}%` } },
+          { description: { [Op.iLike]: `%${search}%` } }
+        ];
+      }
+
+      // Check if multi-tenant is enabled
+      if (!Organization || !OrganizationUser) {
+        return {
+          organizations: [],
+          pagination: {
+            page: 1,
+            limit: parseInt(limit),
+            total: 0,
+            pages: 0,
+            hasNext: false,
+            hasPrev: false,
+          },
+          filters: options,
+          user: {
+            id: targetUser.id,
+            firebaseUid: targetUser.firebaseUid,
+            displayName: targetUser.displayName,
+            systemRole: targetUser.systemRole,
+          }
+        };
+      }
+
+      // Validate sort options
+      const validSortFields = ['joinedAt', 'name', 'createdAt', 'role'];
+      const validSortOrders = ['ASC', 'DESC'];
+      const finalSortBy = validSortFields.includes(sortBy) ? sortBy : 'joinedAt';
+      const finalSortOrder = validSortOrders.includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
+
+      // Build order clause
+      let orderClause;
+      if (finalSortBy === 'name') {
+        // Order by organization name (nested model)
+        orderClause = [[{ model: Organization, as: 'Organization' }, 'name', finalSortOrder]];
+      } else if (finalSortBy === 'createdAt') {
+        // Order by organization creation date (nested model)
+        orderClause = [[{ model: Organization, as: 'Organization' }, 'createdAt', finalSortOrder]];
+      } else {
+        // Order by membership fields (joinedAt, role)
+        orderClause = [[finalSortBy, finalSortOrder]];
+      }
+
+      // Get memberships with organizations
+      const { rows: memberships, count } = await OrganizationUser.findAndCountAll({
+        where: membershipWhere,
+        include: [
+          {
+            model: Organization,
+            as: 'Organization',
+            where: orgWhere,
+            include: [
+              {
+                model: Organization,
+                as: 'ParentOrganization',
+                attributes: ['id', 'name', 'slug']
+              }
+            ]
+          }
+        ],
+        order: orderClause,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+      });
+
+      // Format response
+      const organizations = memberships.map(membership => ({
+        ...membership.Organization.toJSON(),
+        membership: {
+          id: membership.id,
+          role: membership.role,
+          permissions: membership.permissions,
+          isActive: membership.isActive,
+          joinedAt: membership.joinedAt,
+          lastAccessAt: membership.lastAccessAt,
+          department: membership.department,
+          jobTitle: membership.jobTitle,
+          invitedBy: membership.invitedBy,
+          invitedAt: membership.invitedAt,
+        }
+      }));
+
+      return {
+        organizations,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: count,
+          pages: Math.ceil(count / limit),
+          hasNext: page < Math.ceil(count / limit),
+          hasPrev: page > 1,
+        },
+        filters: {
+          includeInactive,
+          role,
+          search,
+          sortBy: finalSortBy,
+          sortOrder: finalSortOrder,
+        },
+        user: {
+          id: targetUser.id,
+          firebaseUid: targetUser.firebaseUid,
+          displayName: targetUser.displayName,
+          systemRole: targetUser.systemRole,
+        }
+      };
+    } catch (error) {
+      logger.error({ error, userFirebaseUid, requesterFirebaseUid }, 'Error getting user organizations');
       throw error;
     }
   }

@@ -222,6 +222,46 @@ class UserController {
       next(error);
     }
   }
+
+  /**
+   * Get organizations for a specific user
+   * GET /api/v1/users/:firebaseUid/organizations
+   */
+  async getUserOrganizations(req, res, next) {
+    try {
+      const { firebaseUid } = req.params;
+      const {
+        page,
+        limit,
+        includeInactive,
+        role,
+        search,
+        sortBy,
+        sortOrder
+      } = req.query;
+
+      const result = await userService.getUserOrganizations(
+        firebaseUid,
+        req.firebaseUid,
+        {
+          page,
+          limit,
+          includeInactive: includeInactive === 'true',
+          role,
+          search,
+          sortBy,
+          sortOrder,
+        }
+      );
+      
+      res.success({
+        message: 'User organizations retrieved successfully',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const userController = new UserController();
