@@ -3,7 +3,7 @@ import { health } from './health.route.js';
 import { auth } from './auth.route.js';
 import { user } from './user.route.js';
 
-export const routes = (server) => {
+export const routes = async (server) => {
   // Core routes (always available)
   server.use(`/api/${config.app.apiVersion}/health`, health);
   server.use(`/api/${config.app.apiVersion}/auth`, auth);
@@ -11,14 +11,15 @@ export const routes = (server) => {
   
   // Multi-tenant routes (only if feature is enabled)
   if (config.features.multiTenant) {
-    import('./organization.route.js').then(({ default: organizationRoutes }) => {
+    try {
+      const { default: organizationRoutes } = await import('./organization.route.js');
       server.use(`/api/${config.app.apiVersion}/organizations`, organizationRoutes);
       
       // Alternative route pattern for tenant-specific endpoints
       // This allows both /organizations/:slug and /org/:slug patterns
       server.use(`/api/${config.app.apiVersion}/org`, organizationRoutes);
-    }).catch(error => {
+    } catch (error) {
       console.warn('Multi-tenant routes not available:', error.message);
-    });
+    }
   }
 };

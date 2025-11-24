@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import { config } from '../config/index.js';
 import { getAuth, verifyIdToken } from '../config/firebase.js';
 import { User } from '../models/index.js';
+import { logger } from '../utils/logger.js';
 import { 
   AuthenticationError, 
   ValidationError, 
@@ -56,8 +57,7 @@ class AuthService {
     const user = await User.create({
       firebaseUid: firebaseUser.uid,
       displayName: finalDisplayName,
-      systemRole: 'user', // Use systemRole instead of appRole
-      appRole: 'user', // Keep for backward compatibility
+      systemRole: 'user',
       isActive: true,
       lastLoginAt: new Date(),
     });
@@ -103,7 +103,6 @@ class AuthService {
       userId: user.id,
       firebaseUid: user.firebaseUid,
       systemRole: user.systemRole,
-      appRole: user.appRole, // Keep for backward compatibility
     });
 
     return {
@@ -153,7 +152,6 @@ class AuthService {
       userId: user.id,
       firebaseUid: user.firebaseUid,
       systemRole: user.systemRole,
-      appRole: user.appRole, // Keep for backward compatibility
     });
 
     return {
@@ -193,8 +191,7 @@ class AuthService {
       user = await User.create({
         firebaseUid: uid,
         displayName: name || 'Google User', // Fallback if no name provided
-        systemRole: 'user', // Use systemRole
-        appRole: 'user', // Keep for backward compatibility
+        systemRole: 'user',
         isActive: true,
         lastLoginAt: new Date(),
       });
@@ -205,7 +202,6 @@ class AuthService {
       userId: user.id,
       firebaseUid: user.firebaseUid,
       systemRole: user.systemRole,
-      appRole: user.appRole, // Keep for backward compatibility
     });
 
     return {
@@ -228,7 +224,6 @@ class AuthService {
       userId: user.id,
       firebaseUid: user.firebaseUid,
       systemRole: user.systemRole,
-      appRole: user.appRole, // Keep for backward compatibility
     });
 
     return {
@@ -277,7 +272,8 @@ class AuthService {
       throw new AuthenticationError('User not found');
     }
 
-    await user.update({ emailVerified: true });
+    // Email verification is handled by Firebase - no need to update our database
+    // The emailVerified status is fetched from Firebase when needed
     return { message: 'Email verified successfully' };
   }
 }

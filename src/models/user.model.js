@@ -33,14 +33,6 @@ export const defineUserModel = (sequelize) => {
         defaultValue: 'user',
         comment: 'Global system role - independent of organizations',
       },
-      
-      // Legacy app role (kept for backward compatibility)
-      appRole: {
-        type: DataTypes.ENUM('user', 'admin', 'moderator', 'manager', 'editor'),
-        allowNull: true, // Made optional for multi-tenant
-        defaultValue: 'user',
-        comment: 'Legacy application role - use organization roles instead',
-      },
       isActive: {
         type: DataTypes.BOOLEAN,
         defaultValue: true,
@@ -84,8 +76,8 @@ export const defineUserModel = (sequelize) => {
           }
         },
         {
-          fields: ['appRole'],
-          name: 'users_app_role_index',
+          fields: ['systemRole'],
+          name: 'users_system_role_index',
         },
         {
           fields: ['isActive'],

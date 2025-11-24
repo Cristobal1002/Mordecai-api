@@ -19,7 +19,7 @@ export const startServer = async () => {
     await loadDatabase();
 
     // Cargar middlewares, rutas, JSON, CORS
-    loadExpress(app);
+    await loadExpress(app);
 
     server = app.listen(config.app.port, () => {
       logger.info(

@@ -28,10 +28,10 @@ export const initModels = (sequelize) => {
   // Core User model (always available):
   // - firebaseUid (primary identifier from Firebase Auth)
   // - displayName (cached locally for performance)
-  // - systemRole (global system permissions)
-  // - appRole (legacy role, kept for backward compatibility)
+  // - systemRole (global system permissions: super_admin, system_admin, user)
   // - isActive, lastLoginAt, loginAttempts, etc. (security fields)
   // Firebase handles: email, authentication, profile picture, email verification
+  // Organization roles are managed through OrganizationUser model
   
   // Multi-tenant models (when ENABLE_MULTI_TENANT=true):
   // - Organization: company/tenant data with hierarchy support

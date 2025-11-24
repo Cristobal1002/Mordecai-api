@@ -117,7 +117,6 @@ export const config = {
   // Multi-tenant configuration
   features: {
     multiTenant: process.env.ENABLE_MULTI_TENANT === 'true',
-    legacyMode: process.env.LEGACY_MODE === 'true',
   },
   
   // Database sync configuration (granular control)

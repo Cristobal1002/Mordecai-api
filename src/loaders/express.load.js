@@ -8,7 +8,7 @@ import { routes } from '../routes/index.js';
 import { responseHandler } from '../middlewares/index.js';
 import { errorHandlerMiddleware } from '../middlewares/index.js';
 
-export const loadExpress = (app) => {
+export const loadExpress = async (app) => {
   // Security headers
   app.use(helmet());
 
@@ -55,8 +55,8 @@ export const loadExpress = (app) => {
   // Response handler middleware
   app.use(responseHandler);
 
-  // Routes
-  routes(app);
+  // Routes (async to handle conditional multi-tenant routes)
+  await routes(app);
 
   // 404 handler
   app.use((req, res) => {

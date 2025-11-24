@@ -12,9 +12,21 @@ export class UnauthorizedError extends CustomError {
     }
 }
 
+export class AuthenticationError extends CustomError {
+    constructor(message = "Authentication failed.") {
+        super(message, 401, null, "https://mordcai.com/errors/authentication");
+    }
+}
+
 export class ForbiddenError extends CustomError {
     constructor(message = "You are not authorized to access this resource.") {
         super(message, 403, null, "https://mordcai.com/errors/forbidden");
+    }
+}
+
+export class ValidationError extends CustomError {
+    constructor(message = "Validation error.") {
+        super(message, 400, null, "https://mordcai.com/errors/validation");
     }
 }
 

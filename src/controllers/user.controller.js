@@ -43,7 +43,7 @@ class UserController {
       const { 
         page, 
         limit, 
-        appRole, 
+        systemRole, 
         isActive, 
         search,
         sortBy,
@@ -56,7 +56,7 @@ class UserController {
       const result = await userService.getUsersList(req.firebaseUid, {
         page,
         limit,
-        appRole,
+        systemRole,
         isActive: isActive !== undefined ? isActive === 'true' : undefined,
         search,
         sortBy,
@@ -88,20 +88,20 @@ class UserController {
     }
   }
 
-  async updateUserRole(req, res, next) {
+  async updateUserSystemRole(req, res, next) {
     try {
       const { firebaseUid } = req.params;
-      const { appRole } = req.body;
+      const { systemRole } = req.body;
       
-      const user = await userService.updateUserRole(firebaseUid, appRole, req.firebaseUid);
+      const user = await userService.updateUserSystemRole(firebaseUid, systemRole, req.firebaseUid);
       
       logger.info(
-        { targetUserId: user.id, newAppRole: appRole, adminId: req.userId },
-        'User app role updated by admin'
+        { targetUserId: user.id, newSystemRole: systemRole, adminId: req.userId },
+        'User system role updated by super admin'
       );
       
       res.success({
-        message: 'User app role updated successfully',
+        message: 'User system role updated successfully',
         data: {
           user: user.toJSON(),
         },

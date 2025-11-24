@@ -28,7 +28,8 @@ class UserService {
         // App-specific data from PostgreSQL
         id: appUser.id,
         firebaseUid: appUser.firebaseUid,
-        appRole: appUser.appRole,
+        systemRole: appUser.systemRole,
+        displayName: appUser.displayName,
         isActive: appUser.isActive,
         lastLoginAt: appUser.lastLoginAt,
         createdAt: appUser.createdAt,
@@ -36,7 +37,6 @@ class UserService {
         
         // Profile data from Firebase
         email: firebaseUser.email,
-        displayName: firebaseUser.displayName,
         photoURL: firebaseUser.photoURL,
         emailVerified: firebaseUser.emailVerified,
         providerData: firebaseUser.providerData,
@@ -58,7 +58,8 @@ class UserService {
     try {
       const user = await User.create({
         firebaseUid,
-        appRole: options.appRole || 'user',
+        systemRole: options.systemRole || 'user',
+        displayName: options.displayName,
         isActive: options.isActive !== undefined ? options.isActive : true,
         lastLoginAt: new Date(),
       });
@@ -94,14 +95,14 @@ class UserService {
   // }
 
   /**
-   * Update user app role (admin function)
+   * Update user system role (super admin function)
    */
-  async updateUserRole(firebaseUid, newAppRole, adminFirebaseUid) {
+  async updateUserSystemRole(firebaseUid, newSystemRole, adminFirebaseUid) {
     try {
-      // Verify admin permissions
+      // Verify super admin permissions
       const admin = await User.findOne({ where: { firebaseUid: adminFirebaseUid } });
-      if (!admin || admin.appRole !== 'admin') {
-        throw new AuthenticationError('Insufficient permissions');
+      if (!admin || !admin.isSuperAdmin()) {
+        throw new AuthenticationError('Insufficient permissions - super admin required');
       }
 
       const user = await User.findOne({ where: { firebaseUid } });
@@ -109,34 +110,45 @@ class UserService {
         throw new AuthenticationError('User not found');
       }
 
-      await user.update({ appRole: newAppRole });
+      // Validate systemRole value
+      const validRoles = ['super_admin', 'system_admin', 'user'];
+      if (!validRoles.includes(newSystemRole)) {
+        throw new ValidationError('Invalid system role');
+      }
+
+      await user.update({ systemRole: newSystemRole });
       
       logger.info(
-        { userId: user.id, newAppRole, adminId: admin.id }, 
-        'User app role updated'
+        { userId: user.id, newSystemRole, adminId: admin.id }, 
+        'User system role updated'
       );
       
       return user;
     } catch (error) {
-      logger.error({ error, firebaseUid, newAppRole }, 'Error updating user app role');
+      logger.error({ error, firebaseUid, newSystemRole }, 'Error updating user system role');
       throw error;
     }
   }
 
   /**
-   * Deactivate user account
+   * Deactivate user account (system admin function)
    */
   async deactivateUser(firebaseUid, adminFirebaseUid) {
     try {
-      // Verify admin permissions
+      // Verify system admin permissions
       const admin = await User.findOne({ where: { firebaseUid: adminFirebaseUid } });
-      if (!admin || !['admin', 'moderator'].includes(admin.appRole)) {
-        throw new AuthenticationError('Insufficient permissions');
+      if (!admin || !admin.isSystemAdmin()) {
+        throw new AuthenticationError('Insufficient permissions - system admin required');
       }
 
       const user = await User.findOne({ where: { firebaseUid } });
       if (!user) {
         throw new AuthenticationError('User not found');
+      }
+
+      // Prevent deactivating super admins (unless done by another super admin)
+      if (user.isSuperAdmin() && !admin.isSuperAdmin()) {
+        throw new AuthenticationError('Cannot deactivate super admin without super admin privileges');
       }
 
       // Deactivate in PostgreSQL
@@ -158,20 +170,20 @@ class UserService {
   }
 
   /**
-   * Get users list with advanced filtering and search (admin/moderator function)
+   * Get users list with advanced filtering and search (system admin function)
    */
   async getUsersList(adminFirebaseUid, options = {}) {
     try {
-      // Verify admin permissions
+      // Verify system admin permissions
       const admin = await User.findOne({ where: { firebaseUid: adminFirebaseUid } });
-      if (!admin || !['admin', 'moderator'].includes(admin.appRole)) {
-        throw new AuthenticationError('Insufficient permissions');
+      if (!admin || !admin.isSystemAdmin()) {
+        throw new AuthenticationError('Insufficient permissions - system admin required');
       }
 
       const { 
         page = 1, 
         limit = 20, 
-        appRole, 
+        systemRole, 
         isActive, 
         search,
         sortBy = 'createdAt',
@@ -185,7 +197,7 @@ class UserService {
       const whereClause = {};
       
       // Build where clause for filters
-      if (appRole) whereClause.appRole = appRole;
+      if (systemRole) whereClause.systemRole = systemRole;
       if (isActive !== undefined) whereClause.isActive = isActive;
       
       // Date range filter
@@ -199,7 +211,7 @@ class UserService {
       const searchTerm = search ? search.toLowerCase().trim() : null;
 
       // Validate sort options
-      const validSortFields = ['createdAt', 'updatedAt', 'lastLoginAt', 'appRole'];
+      const validSortFields = ['createdAt', 'updatedAt', 'lastLoginAt', 'systemRole'];
       const validSortOrders = ['ASC', 'DESC'];
       
       const finalSortBy = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
@@ -254,7 +266,7 @@ class UserService {
           const searchableText = [
             user.email,
             user.displayName,
-            user.appRole,
+            user.systemRole,
             user.firebaseUid
           ].filter(Boolean).join(' ').toLowerCase();
           
@@ -277,7 +289,7 @@ class UserService {
           hasPrev: page > 1,
         },
         filters: {
-          appRole,
+          systemRole,
           isActive,
           search: searchTerm,
           sortBy: finalSortBy,
@@ -303,10 +315,10 @@ class UserService {
    */
   async getUsersOverview(adminFirebaseUid) {
     try {
-      // Verify admin permissions
+      // Verify system admin permissions
       const admin = await User.findOne({ where: { firebaseUid: adminFirebaseUid } });
-      if (!admin || !['admin', 'moderator'].includes(admin.appRole)) {
-        throw new AuthenticationError('Insufficient permissions');
+      if (!admin || !admin.isSystemAdmin()) {
+        throw new AuthenticationError('Insufficient permissions - system admin required');
       }
 
       // Get counts by role and status (optimized single queries)
@@ -316,13 +328,13 @@ class UserService {
         recentUsers,
         topUsers
       ] = await Promise.all([
-        // Count by role
+        // Count by system role
         User.findAll({
           attributes: [
-            'appRole',
+            'systemRole',
             [sequelize.fn('COUNT', sequelize.col('id')), 'count']
           ],
-          group: ['appRole'],
+          group: ['systemRole'],
           raw: true
         }),
         
@@ -359,7 +371,7 @@ class UserService {
 
       // Format role statistics
       const roleDistribution = roleStats.reduce((acc, stat) => {
-        acc[stat.appRole] = parseInt(stat.count);
+        acc[stat.systemRole] = parseInt(stat.count);
         return acc;
       }, {});
 
@@ -381,14 +393,16 @@ class UserService {
         recentUsers: recentUsers.map(user => ({
           id: user.id,
           firebaseUid: user.firebaseUid,
-          appRole: user.appRole,
+          systemRole: user.systemRole,
+          displayName: user.displayName,
           isActive: user.isActive,
           createdAt: user.createdAt,
         })),
         activeUsers: topUsers.map(user => ({
           id: user.id,
           firebaseUid: user.firebaseUid,
-          appRole: user.appRole,
+          systemRole: user.systemRole,
+          displayName: user.displayName,
           lastLoginAt: user.lastLoginAt,
         })),
       };
@@ -399,14 +413,14 @@ class UserService {
   }
 
   /**
-   * Soft delete user (admin function)
+   * Soft delete user (super admin function)
    */
   async deleteUser(firebaseUid, adminFirebaseUid) {
     try {
-      // Verify admin permissions
+      // Verify super admin permissions
       const admin = await User.findOne({ where: { firebaseUid: adminFirebaseUid } });
-      if (!admin || admin.appRole !== 'admin') {
-        throw new AuthenticationError('Insufficient permissions');
+      if (!admin || !admin.isSuperAdmin()) {
+        throw new AuthenticationError('Insufficient permissions - super admin required');
       }
 
       const user = await User.findOne({ where: { firebaseUid } });
@@ -437,10 +451,10 @@ class UserService {
    */
   async permanentlyDeleteUser(firebaseUid, adminFirebaseUid) {
     try {
-      // Verify admin permissions
+      // Verify super admin permissions
       const admin = await User.findOne({ where: { firebaseUid: adminFirebaseUid } });
-      if (!admin || admin.appRole !== 'admin') {
-        throw new AuthenticationError('Insufficient permissions');
+      if (!admin || !admin.isSuperAdmin()) {
+        throw new AuthenticationError('Insufficient permissions - super admin required');
       }
 
       // Find user including soft deleted ones
@@ -472,14 +486,14 @@ class UserService {
   }
 
   /**
-   * Restore soft deleted user (admin function)
+   * Restore soft deleted user (super admin function)
    */
   async restoreUser(firebaseUid, adminFirebaseUid) {
     try {
-      // Verify admin permissions
+      // Verify super admin permissions
       const admin = await User.findOne({ where: { firebaseUid: adminFirebaseUid } });
-      if (!admin || admin.appRole !== 'admin') {
-        throw new AuthenticationError('Insufficient permissions');
+      if (!admin || !admin.isSuperAdmin()) {
+        throw new AuthenticationError('Insufficient permissions - super admin required');
       }
 
       // Find soft deleted user
@@ -515,21 +529,21 @@ class UserService {
   }
 
   /**
-   * Get user statistics (admin function)
+   * Get user statistics (system admin function)
    */
   async getUserStats(adminFirebaseUid) {
     try {
-      // Verify admin permissions
+      // Verify system admin permissions
       const admin = await User.findOne({ where: { firebaseUid: adminFirebaseUid } });
-      if (!admin || !['admin', 'moderator'].includes(admin.appRole)) {
-        throw new AuthenticationError('Insufficient permissions');
+      if (!admin || !admin.isSystemAdmin()) {
+        throw new AuthenticationError('Insufficient permissions - system admin required');
       }
 
       const [
         totalUsers,
         activeUsers,
         inactiveUsers,
-        adminUsers,
+        systemAdmins,
         recentUsers,
         deletedUsers,
         totalWithDeleted,
@@ -537,7 +551,7 @@ class UserService {
         User.count(), // Only non-deleted users
         User.count({ where: { isActive: true } }),
         User.count({ where: { isActive: false } }),
-        User.count({ where: { appRole: 'admin' } }),
+        User.count({ where: { systemRole: { [Op.in]: ['super_admin', 'system_admin'] } } }),
         User.count({
           where: {
             createdAt: {
@@ -553,7 +567,7 @@ class UserService {
         totalUsers,
         activeUsers,
         inactiveUsers,
-        adminUsers,
+        systemAdmins,
         recentUsers,
         deletedUsers,
         totalWithDeleted,
@@ -567,14 +581,14 @@ class UserService {
   }
 
   /**
-   * Get deleted users list (admin function)
+   * Get deleted users list (super admin function)
    */
   async getDeletedUsersList(adminFirebaseUid, options = {}) {
     try {
-      // Verify admin permissions
+      // Verify super admin permissions
       const admin = await User.findOne({ where: { firebaseUid: adminFirebaseUid } });
-      if (!admin || admin.appRole !== 'admin') {
-        throw new AuthenticationError('Insufficient permissions');
+      if (!admin || !admin.isSuperAdmin()) {
+        throw new AuthenticationError('Insufficient permissions - super admin required');
       }
 
       const { page = 1, limit = 20 } = options;
