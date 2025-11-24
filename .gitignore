@@ -35,3 +35,4 @@ coverage/
 .cache/
 
 testing-multi-provider-firebase-adminsdk-fbsvc-88c3e328ca.json
+firebase-c.json
