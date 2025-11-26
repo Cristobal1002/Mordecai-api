@@ -50,3 +50,4 @@ export async function loadAndRenderTemplate(templateName, data) {
   return renderTemplate(template, data);
 }
 
+
