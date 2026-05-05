@@ -3,7 +3,7 @@ import path from 'path';
 import { TenantBranding, Tenant } from '../../models/index.js';
 import { brandingService } from './branding.service.js';
 import { tenantService } from '../tenants/tenant.service.js';
-import { uploadBrandingLogo, resolveLogoUrl } from '../../utils/s3-upload.js';
+import { uploadBrandingLogo, uploadBrandingSignature, resolveLogoUrl } from '../../utils/s3-upload.js';
 
 const requireTenantAdmin = async (tenantId, req) => {
   await tenantService.getAdminSnapshot(tenantId, req);
@@ -30,6 +30,10 @@ export const brandingController = {
             supportEmail: branding.supportEmail,
             supportPhone: branding.supportPhone,
             footerText: branding.footerText,
+            signatureImageKey: branding.signatureImageKey ?? null,
+            signatoryName: branding.signatoryName ?? null,
+            signatoryTitle: branding.signatoryTitle ?? null,
+            signatureUpdatedAt: branding.signatureUpdatedAt ?? null,
           }
         : null;
 
@@ -55,6 +59,10 @@ export const brandingController = {
           supportEmail: branding.supportEmail,
           supportPhone: branding.supportPhone,
           footerText: branding.footerText,
+          signatureImageKey: branding.signatureImageKey ?? null,
+          signatoryName: branding.signatoryName ?? null,
+          signatoryTitle: branding.signatoryTitle ?? null,
+          signatureUpdatedAt: branding.signatureUpdatedAt ?? null,
         },
         'Branding updated'
       );
@@ -96,6 +104,48 @@ export const brandingController = {
           footerText: branding.footerText,
         },
         'Logo actualizado'
+      );
+    } catch (error) {
+      next(error);
+    } finally {
+      if (filePath) {
+        fs.unlink(filePath, () => {});
+      }
+    }
+  },
+
+  uploadSignature: async (req, res, next) => {
+    let filePath = null;
+    try {
+      const { tenantId } = req.params;
+      await requireTenantAdmin(tenantId, req);
+
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: 'No se subió ningún archivo' });
+      }
+      filePath = req.file.path || path.join(req.file.destination || 'uploads/branding', req.file.filename);
+
+      const sigKey = await uploadBrandingSignature(
+        tenantId,
+        filePath,
+        req.file.originalname,
+        req.file.mimetype
+      );
+
+      const branding = await brandingService.upsert(tenantId, {
+        signatureImageKey: sigKey,
+        signatureUpdatedAt: new Date(),
+      });
+
+      res.ok(
+        {
+          id: branding.id,
+          signatureImageKey: branding.signatureImageKey ?? null,
+          signatoryName: branding.signatoryName ?? null,
+          signatoryTitle: branding.signatoryTitle ?? null,
+          signatureUpdatedAt: branding.signatureUpdatedAt ?? null,
+        },
+        'Firma actualizada'
       );
     } catch (error) {
       next(error);

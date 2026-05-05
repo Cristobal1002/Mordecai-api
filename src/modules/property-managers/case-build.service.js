@@ -16,6 +16,7 @@ import {
 } from '../../models/index.js';
 import { automationService } from '../automations/automation.service.js';
 import { logger } from '../../utils/logger.js';
+import { formatSingleLineMailingAddress } from '../../utils/mailing-address.js';
 
 const buildExternalKey = (connectionId, leaseId) =>
   `pms:${connectionId}:lease:${leaseId}`;
@@ -112,6 +113,7 @@ export async function buildNewCasesFromPms(tenantId, connectionId) {
     if (existingKeys.has(externalKey)) continue;
 
     let debtor = debtorCache.get(pmsDebtor.id);
+    const debtorAddress = formatSingleLineMailingAddress(pmsDebtor.address);
     if (!debtor) {
       const externalRef = `pms:${connectionId}:${pmsDebtor.externalId}`;
       const [d] = await Debtor.findOrCreate({
@@ -122,7 +124,10 @@ export async function buildNewCasesFromPms(tenantId, connectionId) {
           fullName: pmsDebtor.displayName || 'Unknown',
           email: pmsDebtor.email ?? null,
           phone: pmsDebtor.phone ?? null,
-          metadata: { pms_debtor_id: pmsDebtor.id },
+          metadata: {
+            pms_debtor_id: pmsDebtor.id,
+            ...(debtorAddress ? { mailing_address_single_line: debtorAddress } : {}),
+          },
         },
       });
       debtor = d;
@@ -134,6 +139,7 @@ export async function buildNewCasesFromPms(tenantId, connectionId) {
     if (amountDueCents <= 0 || !Number.isFinite(amountDueCents)) continue;
 
     const aging = computeDpdAndDueDate(chargesByLease, lease.id, todayTime);
+    const propertyAddress = formatSingleLineMailingAddress(lease.pmsProperty?.address);
     const meta = {
       source: 'pms',
       pms_connection_id: connectionId,
@@ -141,6 +147,8 @@ export async function buildNewCasesFromPms(tenantId, connectionId) {
       pms_debtor_id: pmsDebtor.id,
       lease_number: lease.leaseNumber ?? lease.externalId ?? null,
       property_name: lease.pmsProperty?.name ?? null,
+      property_address: propertyAddress || null,
+      debtor_address: debtorAddress || null,
       unit_number: lease.pmsUnit?.unitNumber ?? null,
     };
 

@@ -2,7 +2,7 @@ import { templateRepository } from './template.repository.js';
 import { tenantRepository } from '../tenants/tenant.repository.js';
 import { NotFoundError } from '../../errors/index.js';
 
-const VALID_CHANNELS = ['sms', 'email'];
+const VALID_CHANNELS = ['sms', 'email', 'letter'];
 
 export const templateService = {
   listTemplates: async (tenantId, channel = null) => {
@@ -30,16 +30,16 @@ export const templateService = {
     if (!tenant) throw new NotFoundError('Tenant');
 
     if (!VALID_CHANNELS.includes(data.channel)) {
-      throw new Error('channel must be sms or email');
+      throw new Error('channel must be sms, email or letter');
     }
 
     return await templateRepository.createTemplate({
       tenantId,
       channel: data.channel,
       name: data.name,
-      subject: data.channel === 'email' ? data.subject : null,
+      subject: data.channel === 'email' ? data.subject : data.subject ?? null,
       bodyText: data.bodyText,
-      bodyHtml: data.channel === 'email' ? data.bodyHtml : null,
+      bodyHtml: data.channel === 'sms' ? null : data.bodyHtml ?? null,
       isActive: data.isActive !== false,
     });
   },

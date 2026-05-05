@@ -9,6 +9,21 @@ const TEMPLATES_DIR = path.resolve(__dirname, '..', 'templates');
 const TEMPLATE_KEY = process.env.SES_DEFAULT_TEMPLATE || 'collection-default';
 const DEFAULT_CURRENCY = 'USD';
 
+/** Long US date for formal letters, e.g. "February 4, 2026". */
+export const formatLetterDateEnUS = (date = new Date()) => {
+  try {
+    const d = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(d.getTime())) return formatLetterDateEnUS(new Date());
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(d);
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+};
+
 let renderer = null;
 
 const getRenderer = () => {
@@ -162,6 +177,16 @@ export const buildCollectionEmailVariables = ({
     : 'N/A';
 
   const meta = debtCase?.meta || {};
+  const dm = debtor?.metadata && typeof debtor.metadata === 'object' ? debtor.metadata : {};
+  const propertyAddress =
+    meta.property_address ||
+    meta.propertyAddress ||
+    '';
+  const debtorAddress =
+    meta.debtor_address ||
+    meta.debtorAddress ||
+    (typeof dm.mailing_address_single_line === 'string' ? dm.mailing_address_single_line : '') ||
+    '';
   return {
     tenant_name: tenant?.name || '',
     debtor_name: debtor?.fullName || 'there',
@@ -171,10 +196,13 @@ export const buildCollectionEmailVariables = ({
     currency,
     days_past_due: daysPastDue,
     due_date: debtCase?.dueDate || '',
+    letter_date: formatLetterDateEnUS(new Date()),
     stage_name: stage?.name || 'collection stage',
     payment_link: custom.paymentLink || debtCase?.paymentLinkUrl || '',
     case_id: debtCase?.id || '',
     property_name: meta.property_name || meta.propertyName || 'your account',
+    property_address: propertyAddress,
+    debtor_address: debtorAddress,
     unit_number: meta.unit_number || meta.unitNumber || '',
     lease_number: meta.lease_number || meta.leaseNumber || meta.lease_id || '',
     ...custom,

@@ -1,11 +1,12 @@
 import { Op } from 'sequelize';
 import { TenantMessageTemplate } from '../../models/index.js';
 
-const CHANNEL_KEYS = ['sms', 'email'];
+const CHANNEL_KEYS = ['sms', 'email', 'letter'];
 
 const TEMPLATE_ID_KEYS = {
   sms: ['sms_template_id', 'smsTemplateId'],
   email: ['email_template_id', 'emailTemplateId'],
+  letter: ['letter_template_id', 'letterTemplateId'],
 };
 
 const readStageTemplateId = (stage, channel) => {

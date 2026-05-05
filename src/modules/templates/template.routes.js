@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { templateController } from './template.controller.js';
 import {
+  letterAiDraftValidator,
   listTemplatesValidator,
   getTemplateValidator,
   createTemplateValidator,
@@ -11,11 +13,44 @@ import {
   createAttachmentValidator,
   updateAttachmentValidator,
   deleteAttachmentValidator,
+  previewTemplatePdfValidator,
+  generateLetterAttachmentValidator,
 } from './template.validator.js';
 import { validateRequest } from '../../middlewares/validate-request.middleware.js';
 import { requireAuth } from '../../middlewares/index.js';
 
 const router = Router({ mergeParams: true });
+
+const letterAiUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = new Set([
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+      'application/pdf',
+    ]);
+    if (allowed.has(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF or images (JPEG, PNG, WebP, GIF) are allowed.'));
+    }
+  },
+});
+
+function letterAiUploadSingle(req, res, next) {
+  letterAiUpload.single('reference')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        success: false,
+        message: err.message || 'Upload failed',
+      });
+    }
+    next();
+  });
+}
 
 // Templates
 router.get(
@@ -24,6 +59,14 @@ router.get(
   listTemplatesValidator,
   validateRequest,
   templateController.listTemplates
+);
+router.post(
+  '/:tenantId/templates/letter-ai-draft',
+  requireAuth(),
+  letterAiUploadSingle,
+  letterAiDraftValidator,
+  validateRequest,
+  templateController.draftLetterWithAi
 );
 router.get(
   '/:tenantId/templates/:templateId',
@@ -52,6 +95,14 @@ router.delete(
   deleteTemplateValidator,
   validateRequest,
   templateController.deleteTemplate
+);
+
+router.post(
+  '/:tenantId/templates/:templateId/preview-pdf',
+  requireAuth(),
+  previewTemplatePdfValidator,
+  validateRequest,
+  templateController.previewTemplatePdf
 );
 
 // Attachments (must be before /:templateId to avoid "attachments" matching templateId)
@@ -89,6 +140,14 @@ router.delete(
   deleteAttachmentValidator,
   validateRequest,
   templateController.deleteAttachment
+);
+
+router.post(
+  '/:tenantId/attachments/generate-letter',
+  requireAuth(),
+  generateLetterAttachmentValidator,
+  validateRequest,
+  templateController.generateLetterAttachment
 );
 
 export default router;
