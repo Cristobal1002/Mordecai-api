@@ -22,8 +22,26 @@ const storage = multer.diskStorage({
   },
 });
 
+const signatureStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '') || '.png';
+    cb(null, `signature-${Date.now()}${ext}`);
+  },
+});
+
 const logoUpload = multer({
   storage,
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Solo se permiten imágenes (PNG, JPEG, GIF, WebP)'));
+  },
+});
+
+const signatureUpload = multer({
+  storage: signatureStorage,
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
@@ -55,6 +73,15 @@ router.post(
   logoUploadValidator,
   validateRequest,
   brandingController.uploadLogo
+);
+
+router.post(
+  '/:tenantId/branding/signature',
+  requireAuth(),
+  signatureUpload.single('signature'),
+  logoUploadValidator,
+  validateRequest,
+  brandingController.uploadSignature
 );
 
 export default router;

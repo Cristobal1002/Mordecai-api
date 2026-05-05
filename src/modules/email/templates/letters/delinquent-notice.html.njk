@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Times New Roman", Times, serif;
+      font-size: 12pt;
+      color: #000;
+      background: #fff;
+      width: 8.5in;
+      min-height: 11in;
+      margin: 0 auto;
+      padding: 1in 1.1in 1in 1.1in;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 1.4em;
+      line-height: 1.5;
+    }
+
+    .date {
+      text-align: right;
+      margin-bottom: 1.2em;
+    }
+
+    .to-block {
+      margin-bottom: 1em;
+      line-height: 1.6;
+    }
+
+    p {
+      margin-bottom: 0.9em;
+      text-align: justify;
+      line-height: 1.6;
+    }
+
+    .sig-block {
+      margin-top: 1.8em;
+      line-height: 1.5;
+    }
+
+    .sig-image-zone {
+      height: 0.85in;
+      margin: 0.3em 0 0.1em 0;
+    }
+
+    .sig-line {
+      border-top: 1px solid #000;
+      width: 2.6in;
+      margin-bottom: 0.2em;
+    }
+
+    sup { font-size: 0.75em; vertical-align: super; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <b>{{ property_name }}</b><br />
+    {{ property_address if property_address else "" }}
+  </div>
+
+  <div class="date">{{ letter_date if letter_date else due_date }}</div>
+
+  <div class="to-block">
+    <b>To:</b> &nbsp;All Resident(s) in possession, including:<br />
+    {{ debtor_name }}<br />
+    {{ unit_number if unit_number else "" }}<br />
+    {{ debtor_address if debtor_address else "" }}
+  </div>
+
+  <p><b>Re: &nbsp; Delinquent Balance</b></p>
+
+  <p>Dear {{ debtor_name }},</p>
+
+  <p>
+    We wanted to check in with you since we did not receive your rent and related charges
+    that are due on the 1<sup>st</sup> of each month. Please remit payment within three days
+    to avoid legal action. If you feel this letter is in error, please contact us immediately.
+  </p>
+
+  <p>
+    The current amount due is <b>{{ amount_due }}</b>. As per your lease agreement,
+    <b>your rent and all associated fees must be paid in full.
+    Partial payments will not be accepted.</b>
+    If you need assistance with payment methods, please contact our office team.
+  </p>
+
+  <p>
+    In accordance with Georgia law, you have three business days to pay the total amount
+    past due presented above. <b>If payment in full is not received within three business days,
+    then please consider this letter a formal demand for possession.</b> Further, if full
+    payment is not received as set forth above, a dispossessory action will be filed in order
+    to obtain possession and there will be an additional fee for filing a dispossessory action
+    that will be added to your account balance.
+  </p>
+
+  <p>
+    In order to prevent this unpleasant action, which would require you to pay additional fees
+    and to surrender your apartment, you must make payment in full immediately or no later than
+    three business days. <b>Legal action may be taken at any time after the expiration of three
+    business days if payment has not been received in full.</b>
+  </p>
+
+  <p>Thank you for your prompt attention to this letter and thank you for choosing to live at {{ property_name }}.</p>
+
+  <p style="font-size: 10.5pt; line-height: 1.5;">
+    On behalf of Management, I hereby certify that I served the above notice by delivering a
+    copy of this letter to the person(s) named above or in their absence from the address set
+    forth above, their usual place of residence, by leaving a copy of this notice on the above
+    referenced date on their door as required by statute, and by sending it by one of the
+    required notice methods provided for in the lease.
+  </p>
+
+  <div class="sig-block">
+    Sincerely,
+    <div class="sig-image-zone">
+      <!-- {{SIGNATURE_BLOCK}} -->
+    </div>
+    <div class="sig-line"></div>
+    {{ signatory_title if signatory_title else "Owner/Authorized Agent" }}<br />
+    {{ tenant_name }}
+  </div>
+
+</body>
+</html>

@@ -15,4 +15,6 @@ export const upsertBrandingValidator = [
   body('supportEmail').optional({ checkFalsy: true }).trim().isEmail().withMessage('supportEmail must be valid email'),
   body('supportPhone').optional({ checkFalsy: true }).trim().isLength({ max: 40 }),
   body('footerText').optional({ checkFalsy: true }).trim(),
+  body('signatoryName').optional({ nullable: true }).trim().isLength({ max: 160 }),
+  body('signatoryTitle').optional({ nullable: true }).trim().isLength({ max: 160 }),
 ];

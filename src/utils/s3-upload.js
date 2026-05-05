@@ -81,6 +81,43 @@ export const uploadBrandingLogo = async (tenantId, filePath, originalName, mimet
   return key;
 };
 
+/**
+ * Upload authorized signature image to S3. Returns S3 key (stored in DB).
+ * @param {string} tenantId
+ * @param {string} filePath
+ * @param {string} originalName
+ * @param {string} mimetype
+ * @returns {Promise<string>} S3 key (e.g. tenants/xxx/branding/signature.png)
+ */
+export const uploadBrandingSignature = async (tenantId, filePath, originalName, mimetype) => {
+  if (!ALLOWED_LOGO_TYPES.includes(mimetype)) {
+    throw new Error('Invalid file type. Use PNG, JPEG, GIF or WebP.');
+  }
+  const stat = fs.statSync(filePath);
+  if (stat.size > MAX_LOGO_SIZE) {
+    throw new Error('Signature image must be under 2MB.');
+  }
+
+  const ext = path.extname(originalName || '') || '.png';
+  const key = `tenants/${tenantId}/branding/signature${ext}`;
+
+  const s3 = getS3Client();
+  const bucket = getBucketName();
+  const body = fs.createReadStream(filePath);
+
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentType: mimetype,
+      CacheControl: 'private, max-age=86400',
+    })
+  );
+
+  return key;
+};
+
 // --- Evidence & payment proof (disputes, agreements) ---
 const ALLOWED_EVIDENCE_TYPES = [
   'image/png',

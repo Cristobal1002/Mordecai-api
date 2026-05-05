@@ -89,5 +89,11 @@ export const config = {
   discovery: {
     ingestSecret: process.env.DISCOVERY_INGEST_SECRET || '',
   },
+  /** Optional. Letter template "draft with AI" (Claude). */
+  anthropic: {
+    apiKey: process.env.ANTHROPIC_API_KEY || null,
+    /** See https://docs.anthropic.com/en/docs/about-claude/models/overview */
+    model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+  },
 };
 

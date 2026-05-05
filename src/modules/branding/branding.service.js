@@ -29,6 +29,10 @@ export const brandingService = {
         supportEmail: data.supportEmail ?? null,
         supportPhone: data.supportPhone ?? null,
         footerText: data.footerText ?? null,
+        signatureImageKey: data.signatureImageKey ?? null,
+        signatoryName: data.signatoryName ?? null,
+        signatoryTitle: data.signatoryTitle ?? null,
+        signatureUpdatedAt: data.signatureUpdatedAt ?? null,
       },
     });
 
@@ -46,6 +50,12 @@ export const brandingService = {
       supportEmail: data.supportEmail !== undefined ? data.supportEmail : branding.supportEmail,
       supportPhone: data.supportPhone !== undefined ? data.supportPhone : branding.supportPhone,
       footerText: data.footerText !== undefined ? data.footerText : branding.footerText,
+      signatureImageKey:
+        data.signatureImageKey !== undefined ? data.signatureImageKey : branding.signatureImageKey,
+      signatoryName: data.signatoryName !== undefined ? data.signatoryName : branding.signatoryName,
+      signatoryTitle: data.signatoryTitle !== undefined ? data.signatoryTitle : branding.signatoryTitle,
+      signatureUpdatedAt:
+        data.signatureUpdatedAt !== undefined ? data.signatureUpdatedAt : branding.signatureUpdatedAt,
     });
 
     return branding;

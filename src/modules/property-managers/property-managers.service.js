@@ -35,6 +35,7 @@ import {
   decryptCredentials,
   isEncryptedPayload,
 } from '../../utils/credentials-crypto.js';
+import { formatSingleLineMailingAddress } from '../../utils/mailing-address.js';
 
 const VALID_STATUSES = ['draft', 'connected', 'syncing', 'error', 'disabled'];
 
@@ -484,14 +485,33 @@ export const propertyManagersService = {
           },
         });
         if (d) {
+          const addrLine = formatSingleLineMailingAddress(pmsDebtor.address);
+          const prevMeta =
+            d.metadata && typeof d.metadata === 'object' && !Array.isArray(d.metadata) ? d.metadata : {};
           await d.update({
             fullName: pmsDebtor.displayName || d.fullName,
             email: pmsDebtor.email ?? d.email,
             phone: pmsDebtor.phone ?? d.phone,
+            metadata: {
+              ...prevMeta,
+              pms_debtor_id: pmsDebtor.id,
+              ...(addrLine ? { mailing_address_single_line: addrLine } : {}),
+            },
           }).catch(() => {});
         }
         debtor = d;
         debtorCache.set(pmsDebtor.id, debtor);
+      } else {
+        const addrLine = formatSingleLineMailingAddress(pmsDebtor.address);
+        const prevMeta =
+          debtor.metadata && typeof debtor.metadata === 'object' && !Array.isArray(debtor.metadata)
+            ? debtor.metadata
+            : {};
+        if (addrLine && addrLine !== prevMeta.mailing_address_single_line) {
+          const nextMeta = { ...prevMeta, pms_debtor_id: pmsDebtor.id, mailing_address_single_line: addrLine };
+          await debtor.update({ metadata: nextMeta }).catch(() => {});
+          debtor.metadata = nextMeta;
+        }
       }
 
       const rawCents = bal.balance_cents ?? bal.balanceCents ?? 0;
@@ -502,6 +522,9 @@ export const propertyManagersService = {
       const daysPastDue = aging ? aging.daysPastDue : 0;
       const dueDate = aging ? aging.dueDate : null;
 
+      const propertyAddress = formatSingleLineMailingAddress(lease.pmsProperty?.address);
+      const debtorAddress = formatSingleLineMailingAddress(pmsDebtor.address);
+
       const meta = {
         source: 'pms',
         pms_connection_id: connectionId,
@@ -509,6 +532,8 @@ export const propertyManagersService = {
         pms_debtor_id: pmsDebtor.id,
         lease_number: lease.leaseNumber ?? lease.externalId ?? null,
         property_name: lease.pmsProperty?.name ?? null,
+        property_address: propertyAddress || null,
+        debtor_address: debtorAddress || null,
         unit_number: lease.pmsUnit?.unitNumber ?? null,
       };
       const leaseIdStr = String(lease.id);

@@ -58,6 +58,23 @@ export const errorHandler = (err, req, res, _next) => {
     });
   }
 
+  // Puppeteer PDF (e.g. preview-pdf): setContent/navigation timeout — often external assets or heavy HTML
+  const isPuppeteerTimeout =
+    err.name === 'TimeoutError' &&
+    /Navigation timeout|timeout.*exceeded|Waiting failed/i.test(errMsg);
+  if (isPuppeteerTimeout) {
+    return res.status(504).json({
+      type: 'https://mordecai.com/errors/pdf-render-timeout',
+      title: 'PDF preview timed out',
+      status: 504,
+      details: {
+        message:
+          'Rendering the PDF took too long. Remove or fix slow external images/links in the letter, or increase PUPPETEER_SET_CONTENT_TIMEOUT_MS on the server.',
+        ...(config.app.nodeEnv === 'development' && { originalError: errMsg }),
+      },
+    });
+  }
+
   // Error no manejado: mensaje genérico al cliente; en desarrollo se incluye el mensaje real (nunca el stack)
   return res.status(500).json({
     type: 'about:blank',
