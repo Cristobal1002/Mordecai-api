@@ -11,6 +11,12 @@ import {
   CollectionEvent,
   Tenant,
 } from "../../models/index.js";
+import { sequelize } from "../../config/database.js";
+import {
+  supersedeOperationalAgreementsForCase,
+  createInstallmentRowsForAgreement,
+  buildAgreementContextDynamicVariables,
+} from "../payment-agreements/payment-agreement-lifecycle.service.js";
 import { resolvePolicyForCase } from "../collections/policy-resolver.service.js";
 import { buildPaymentInstructions } from "../pay/payment-instructions.service.js";
 import {
@@ -33,6 +39,15 @@ import {
   isInstallmentsLikePlan,
   normalizePlanCode,
 } from "./policy/plan-catalog.service.js";
+import {
+  NEGOTIATION_CALENDAR_TZ,
+  compareIsoYmd,
+  computeFirstPaymentWindowFromPolicyRules,
+  isTruthyNegotiationFlag,
+  toNegotiationDateOnly,
+} from "./negotiation-first-payment-window.service.js";
+
+const toDateOnly = toNegotiationDateOnly;
 
 const SUPPORTED_INTERACTION_OUTCOMES = new Set([
   "CONNECTED",
@@ -108,13 +123,6 @@ const DISPUTE_REASON_ALIASES = {
 const DISPUTE_REASON_VALUES = new Set(Object.keys(DISPUTE_REASON_ALIASES));
 const UUID_V4_LIKE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-const toDateOnly = (value) => {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 10);
-};
 
 const isValidEmail = (value) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
@@ -337,6 +345,15 @@ const buildCaseMetadataDynamicVariables = (meta = {}) => {
 /** Build validation-style rules from resolved policy (single source for v1 and v2). */
 const getRulesFromResolvedPolicy = (resolvedPolicy) => {
   const catalog = getPlanCatalogFromResolvedPolicy(resolvedPolicy);
+  const pr =
+    resolvedPolicy?.rules && typeof resolvedPolicy.rules === "object"
+      ? resolvedPolicy.rules
+      : {};
+  const maxDays = pr.negotiation_first_payment_max_days;
+  const deadline = pr.negotiation_first_payment_deadline ?? null;
+  const capLastWd =
+    pr.negotiation_first_payment_cap_last_weekday_of_month ??
+    pr.negotiationFirstPaymentCapLastWeekdayOfMonth;
   return {
     minUpfrontPct: Number(catalog.minUpfrontPct ?? 25),
     halfPct: Number(catalog.halfPct ?? 50),
@@ -347,6 +364,13 @@ const getRulesFromResolvedPolicy = (resolvedPolicy) => {
         ? catalog.allowedPlanTypes
         : ["FULL", "HALF", "INSTALLMENTS_4"],
     plansByCode: catalog.plansByCode || {},
+    negotiationFirstPaymentMaxDays:
+      maxDays != null && maxDays !== "" && Number.isFinite(Number(maxDays))
+        ? Math.max(0, Math.trunc(Number(maxDays)))
+        : null,
+    negotiationFirstPaymentDeadline: deadline || null,
+    negotiationFirstPaymentCapLastWeekdayOfMonth:
+      isTruthyNegotiationFlag(capLastWd),
   };
 };
 
@@ -442,12 +466,61 @@ const validateProposalAgainstRules = ({ proposal, balanceCents, rules }) => {
     }
   }
 
+  const { minDate, maxDate } = computeFirstPaymentWindowFromPolicyRules(
+    {
+      negotiation_first_payment_max_days: rules.negotiationFirstPaymentMaxDays,
+      negotiation_first_payment_deadline: rules.negotiationFirstPaymentDeadline,
+      negotiation_first_payment_cap_last_weekday_of_month:
+        rules.negotiationFirstPaymentCapLastWeekdayOfMonth,
+    },
+    NEGOTIATION_CALENDAR_TZ,
+  );
+
+  const firstDue = toDateOnly(
+    proposal?.first_due_date || proposal?.firstDueDate,
+  );
+  if (!firstDue) {
+    return {
+      ok: false,
+      code: "MISSING_FIRST_DUE_DATE",
+      message:
+        "first_due_date is required as YYYY-MM-DD. Ask when the debtor can pay (first payment or first installment) and pass it in the create-payment-agreement tool.",
+      allowed_options: {
+        first_payment_earliest_date: minDate,
+        first_payment_latest_date: maxDate,
+      },
+    };
+  }
+  if (compareIsoYmd(firstDue, minDate) < 0) {
+    return {
+      ok: false,
+      code: "FIRST_DUE_TOO_EARLY",
+      message: `first_due_date must be on or after ${minDate} (${NEGOTIATION_CALENDAR_TZ} calendar).`,
+      allowed_options: {
+        first_payment_earliest_date: minDate,
+        first_payment_latest_date: maxDate,
+      },
+    };
+  }
+  if (maxDate && compareIsoYmd(firstDue, maxDate) > 0) {
+    return {
+      ok: false,
+      code: "FIRST_DUE_AFTER_MAX",
+      message: `first_due_date must be on or before ${maxDate} per collection policy.`,
+      allowed_options: {
+        first_payment_earliest_date: minDate,
+        first_payment_latest_date: maxDate,
+      },
+    };
+  }
+
   return {
     ok: true,
     planType,
     upfrontAmountCents,
     installmentsCount,
     planConfig,
+    firstDueDate: firstDue,
   };
 };
 
@@ -475,6 +548,24 @@ const buildAgreementValidationSpeakBack = ({
 
   if (validation?.code === "RULE_VIOLATION" && maxInstallments > 0) {
     return `Installments count must be between 1 and ${maxInstallments}. Please confirm a valid installments count.`;
+  }
+
+  if (validation?.code === "MISSING_FIRST_DUE_DATE") {
+    return "Ask when they can make the first payment, then call the tool again with first_due_date as YYYY-MM-DD.";
+  }
+
+  if (validation?.code === "FIRST_DUE_TOO_EARLY") {
+    const min = validation?.allowed_options?.first_payment_earliest_date;
+    return min
+      ? `That date is too soon for our policy. The first payment date must be on or after ${min}. Ask for a later date.`
+      : "The first payment date cannot be in the past. Ask when they can pay starting from today.";
+  }
+
+  if (validation?.code === "FIRST_DUE_AFTER_MAX") {
+    const max = validation?.allowed_options?.first_payment_latest_date;
+    return max
+      ? `That date is too far out. The latest first payment date we can accept is ${max}. Ask for an earlier date.`
+      : "The first payment date is outside the allowed window. Ask for an earlier date.";
   }
 
   return "I could not create the agreement with the provided values. Please confirm plan details and try again.";
@@ -1057,7 +1148,7 @@ const findExistingAgreementByInteraction = async ({
       tenantId,
       debtCaseId,
       createdBy: "AI",
-      status: "ACCEPTED",
+      status: { [Op.in]: ["PENDING", "ACTIVE", "ACCEPTED"] },
       terms: {
         [Op.contains]: {
           interaction_id: safeInteractionId,
@@ -1564,9 +1655,16 @@ const executeRegisterCallForInteraction = async ({
   const paymentInstructionsSummary = buildPaymentInstructionSummary(
     filteredPaymentInstructions,
   );
+
+  /** Shorter prompts + smaller JSON payload → faster time-to-options in ConvAI (opt-in). */
+  const convaiBrevityMode =
+    process.env.ELEVEN_CONVAI_BREVITY_MODE === "true" ||
+    process.env.ELEVEN_CONVAI_BREVITY_MODE === "1";
+
+  const paymentJsonMaxChars = convaiBrevityMode ? 1500 : 4000;
   const paymentInstructionsJson = truncateString(
     JSON.stringify(filteredPaymentInstructions),
-    4000,
+    paymentJsonMaxChars,
   );
 
   const customInstructions = resolvedPolicy?.rules?.custom_instructions ?? "";
@@ -1604,6 +1702,57 @@ const executeRegisterCallForInteraction = async ({
     "If identity is not confirmed, do not disclose debt information and politely end the call or request callback with the debtor.",
   ].join(" ");
 
+  const brevityPacing = convaiBrevityMode
+    ? [
+        "Dialog pacing (high priority): Use short turns (about 2–3 sentences) until the debtor picks a plan.",
+        "After identity is confirmed: give one brief compliance line if your policy requires it, then state the balance in one sentence.",
+        "Immediately list the allowed options using allowed_plans_human (short labels only) and ask which they prefer.",
+        "Do not read payment_channels_context_json aloud; use payment_channels_context as reference only.",
+        "If the user is already responding, acknowledge briefly and continue—avoid repeating the full script.",
+      ].join(" ")
+    : "";
+
+  /** Default on: long silences hurt outbound collections UX. Disable with ELEVEN_CONVAI_REDUCE_DEAD_AIR=false */
+  const reduceDeadAir =
+    process.env.ELEVEN_CONVAI_REDUCE_DEAD_AIR !== "false" &&
+    process.env.ELEVEN_CONVAI_REDUCE_DEAD_AIR !== "0";
+
+  const deadAirInstructions = reduceDeadAir
+    ? [
+        "Minimize dead air (critical on phone): Start your next utterance within about one second after the user stops speaking.",
+        "If you need compute time before a longer reply, open the same turn with a sub-second acknowledgment (e.g. Okay, Got it, Thanks) then continue—do not leave the line quiet for several seconds.",
+        "When listing payment options or next steps, deliver items back-to-back in short clauses; avoid long gaps between options.",
+        "Prefer one short bridge word over silence; avoid long ums or repeating the same filler.",
+      ].join(" ")
+    : "";
+
+  const fpWindow = computeFirstPaymentWindowFromPolicyRules(
+    resolvedPolicy?.rules || {},
+    NEGOTIATION_CALENDAR_TZ,
+  );
+  const monthEndWeekdayNote = fpWindow.lastWeekdayCapYmd
+    ? ` The policy caps first payment at the last Monday–Friday of the current calendar month (${fpWindow.lastWeekdayCapYmd} in ${fpWindow.timeZone}; weekends excluded, public holidays not excluded). Do not accept or propose first_due_date after that day.`
+    : "";
+  const negotiationDateInstructions = [
+    "Payment commitment date (required before create-payment-agreement): Ask the debtor when they can pay the agreed amount (first payment or first installment).",
+    "You must obtain an explicit calendar date from the debtor in the conversation (they must agree to that day out loud or clearly confirm it). Do not invent first_due_date, silently default to today, or use a date they have not confirmed.",
+    `You must set first_due_date as YYYY-MM-DD in the tool payload. Earliest allowed date: ${fpWindow.minDate} (${fpWindow.timeZone} calendar).`,
+    fpWindow.maxDate
+      ? `Latest allowed first payment date: ${fpWindow.maxDate} (inclusive). Do not use a date after this.${monthEndWeekdayNote}`
+      : `No latest deadline is configured in policy; any date on or after the earliest date is allowed.${monthEndWeekdayNote}`,
+  ].join(" ");
+
+  const customInstructionsMerged = [
+    String(customInstructions || "").trim(),
+    negotiationDateInstructions,
+    brevityPacing,
+    deadAirInstructions,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const customInstructionsMax =
+    convaiBrevityMode || deadAirInstructions ? 3000 : 2200;
+
   const fallbackOpeningMessage = `Hi, this is Ivanna from ${tenantDisplayName}. For privacy, I can only discuss account details with the account holder. Am I speaking with ${debtor.fullName}?`;
   const resolvedOpeningMessage = openingMessage || fallbackOpeningMessage;
 
@@ -1615,6 +1764,11 @@ const executeRegisterCallForInteraction = async ({
     allowedPaymentChannelCodes,
     PAYMENT_CHANNEL_LABELS,
   );
+
+  const agreementContextVars = await buildAgreementContextDynamicVariables({
+    tenantId: interaction.tenantId,
+    debtCaseId: debtCase.id,
+  });
 
   const dynamicVariables = {
     tenant_id: String(interaction.tenantId),
@@ -1650,7 +1804,12 @@ const executeRegisterCallForInteraction = async ({
     max_installments: String(flowRules.maxInstallments),
     min_upfront_pct: String(flowRules.minUpfrontPct),
     half_pct: String(flowRules.halfPct),
-    custom_instructions: String(customInstructions || "").slice(0, 2000),
+    first_payment_earliest_date: fpWindow.minDate,
+    first_payment_latest_date: fpWindow.maxDate || "",
+    first_payment_last_weekday_of_month_cap:
+      fpWindow.lastWeekdayCapYmd || "",
+    first_payment_calendar_tz: fpWindow.timeZone,
+    custom_instructions: customInstructionsMerged.slice(0, customInstructionsMax),
     compliance_instructions: complianceInstructions,
     identity_verification_required: "true",
     opening_message: resolvedOpeningMessage,
@@ -1658,6 +1817,7 @@ const executeRegisterCallForInteraction = async ({
     tenant_name: tenantDisplayName,
     tenant_display_name: tenantDisplayName,
     ...buildCaseMetadataDynamicVariables(metaForVariables),
+    ...agreementContextVars,
     ...extraDynamicVariables,
   };
 
@@ -1673,6 +1833,19 @@ const executeRegisterCallForInteraction = async ({
         version: "v1",
       },
       dynamic_variables: dynamicVariables,
+      // VAD overrides — reduce noise-triggered interruptions on phone calls.
+      // Tune via env vars without redeploying. Defaults are conservative for outbound collections.
+      agent_config: {
+        conversation: {
+          config: {
+            turn_detection: {
+              threshold: Number(process.env.ELEVEN_VAD_THRESHOLD) || 0.55,
+              prefix_padding_ms: Number(process.env.ELEVEN_VAD_PREFIX_PADDING_MS) || 400,
+              silence_duration_ms: Number(process.env.ELEVEN_VAD_SILENCE_DURATION_MS) || 700,
+            },
+          },
+        },
+      },
     },
   };
 
@@ -2008,34 +2181,89 @@ export const createPaymentAgreementFromTool = async ({
     (isInstallmentsLikePlan(validation.planType)
       ? "INSTALLMENTS"
       : "PROMISE_TO_PAY");
-  const firstDueDate = toDateOnly(effectiveProposal?.first_due_date);
-  const agreement = await PaymentAgreement.create({
-    tenantId,
-    debtCaseId: debtCase.id,
-    type: agreementType,
-    status: "ACCEPTED",
-    totalAmountCents: Number(debtCase.amountDueCents),
-    downPaymentCents: validation.upfrontAmountCents,
-    installments:
-      agreementType === "INSTALLMENTS"
-        ? Math.max(1, validation.installmentsCount || 1)
-        : null,
-    startDate: agreementType === "INSTALLMENTS" ? firstDueDate : null,
-    promiseDate: agreementType === "PROMISE_TO_PAY" ? firstDueDate : null,
-    provider: "NONE",
-    createdBy: "AI",
-    terms: {
-      plan_type: validation.planType,
-      proposal: effectiveProposal,
+  const firstDueDate =
+    validation.firstDueDate ||
+    toDateOnly(
+      effectiveProposal?.first_due_date || effectiveProposal?.firstDueDate,
+    );
+
+  if (!firstDueDate) {
+    logger.error(
+      { caseId, interactionId, planType: validation.planType },
+      "createPaymentAgreementFromTool: missing firstDueDate after successful validation",
+    );
+    await updateInteractionCallStateFromTool({
+      interaction,
+      nextState: CALL_STATES.CONFIRM_AGREEMENT,
+      action: CALL_ACTIONS.CALL_CREATE_PAYMENT_AGREEMENT,
+      tool: "create-payment-agreement",
+      toolOk: false,
+      toolCode: "MISSING_FIRST_DUE_DATE",
+    });
+    await createCallToolEvent({
+      debtCaseId: debtCase.id,
+      automationId,
+      eventType: "agreement_tool_validation_failed",
+      payload: {
+        interaction_id: interaction.id,
+        code: "MISSING_FIRST_DUE_DATE",
+        message: "first_due_date missing after validation",
+      },
+    });
+    return {
+      ok: false,
+      code: "MISSING_FIRST_DUE_DATE",
+      message:
+        "first_due_date is required as YYYY-MM-DD. Ask when the debtor can pay (first payment or first installment) and pass it in the create-payment-agreement tool.",
       proposal_source: proposalResolution.source,
       proposal_snapshot_version: proposalResolution.snapshot_version,
       proposal_committed_version: proposalResolution.committed_version,
-      payload_proposal: proposal || null,
-      conversation_id: conversationId || null,
-      interaction_id: interactionId || null,
-      rules_snapshot: rules,
-      status: "LINK_SENT",
-    },
+      current_state: currentState,
+      next_state: CALL_STATES.CONFIRM_AGREEMENT,
+      speak_back: buildAgreementValidationSpeakBack({
+        validation: { code: "MISSING_FIRST_DUE_DATE" },
+        currency: debtCase.currency || "USD",
+      }),
+    };
+  }
+
+  let agreement;
+  await sequelize.transaction(async (t) => {
+    await supersedeOperationalAgreementsForCase(tenantId, debtCase.id, {
+      transaction: t,
+    });
+    agreement = await PaymentAgreement.create(
+      {
+        tenantId,
+        debtCaseId: debtCase.id,
+        type: agreementType,
+        status: "PENDING",
+        totalAmountCents: Number(debtCase.amountDueCents),
+        downPaymentCents: validation.upfrontAmountCents,
+        installments:
+          agreementType === "INSTALLMENTS"
+            ? Math.max(1, validation.installmentsCount || 1)
+            : null,
+        startDate: agreementType === "INSTALLMENTS" ? firstDueDate : null,
+        promiseDate: agreementType === "PROMISE_TO_PAY" ? firstDueDate : null,
+        provider: "NONE",
+        createdBy: "AI",
+        terms: {
+          plan_type: validation.planType,
+          proposal: effectiveProposal,
+          proposal_source: proposalResolution.source,
+          proposal_snapshot_version: proposalResolution.snapshot_version,
+          proposal_committed_version: proposalResolution.committed_version,
+          payload_proposal: proposal || null,
+          conversation_id: conversationId || null,
+          interaction_id: interactionId || null,
+          rules_snapshot: rules,
+          status: "LINK_SENT",
+        },
+      },
+      { transaction: t }
+    );
+    await createInstallmentRowsForAgreement(agreement, { transaction: t });
   });
 
   const paymentLinkUrl = await createPaymentLinkAndGetUrl({
@@ -2161,6 +2389,11 @@ export const createPaymentAgreementFromTool = async ({
 
   const successfulDeliveries = deliveryResults.filter((result) => result.ok);
   const failedDeliveries = deliveryResults.filter((result) => !result.ok);
+
+  if (successfulDeliveries.length > 0) {
+    await agreement.update({ status: "ACTIVE" });
+  }
+
   const sentByEmail = successfulDeliveries.some(
     (result) => result.channel === "email",
   );

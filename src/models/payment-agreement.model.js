@@ -37,7 +37,10 @@ export class PaymentAgreement extends Model {
         status: {
           type: DataTypes.ENUM(
             'PROPOSED',
+            'PENDING',
+            'ACTIVE',
             'ACCEPTED',
+            'SUPERSEDED',
             'CANCELLED',
             'COMPLETED',
             'BROKEN'

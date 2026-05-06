@@ -47,7 +47,13 @@ export const caseController = {
   triggerCall: async (req, res, next) => {
     try {
       const { tenantId, caseId } = req.params;
-      const result = await caseService.triggerCall(tenantId, caseId);
+      const followUp =
+        req.query?.followUp === 'true' ||
+        req.query?.follow_up === 'true' ||
+        req.body?.followUp === true;
+      const result = await caseService.triggerCall(tenantId, caseId, {
+        followUp,
+      });
       res.ok(result, result.message || 'Call enqueued');
     } catch (error) {
       next(error);

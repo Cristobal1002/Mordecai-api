@@ -10,6 +10,8 @@ export const DEFAULT_CALL_SLOTS = Object.freeze({
   installments_count: null,
   delivery_channel: null,
   delivery_email: null,
+  /** YYYY-MM-DD — first payment / first installment date for negotiated agreement */
+  first_due_date: null,
   agreement_confirmed: null,
   callback_requested: false,
   goodbye: false,
@@ -66,6 +68,7 @@ export const sanitizeCallSlots = ({ slots = {} }) => {
     next.installments_count = null;
     next.delivery_channel = null;
     next.delivery_email = null;
+    next.first_due_date = null;
     next.agreement_confirmed = null;
     next.dispute_detected = false;
     next.dispute_reason = null;
@@ -179,6 +182,7 @@ export const buildAgreementProposalFromSlots = (slots = {}) =>
     installments_count: slots.installments_count || null,
     delivery_channel: slots.delivery_channel || null,
     delivery_email: slots.delivery_email || null,
+    first_due_date: slots.first_due_date || null,
   });
 
 export const buildDisputeProposalFromSlots = (slots = {}) =>

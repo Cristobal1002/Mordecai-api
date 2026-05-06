@@ -67,12 +67,13 @@ export async function addCaseActionJob(jobName, data, options = {}) {
 /**
  * On-demand call helper (used by cases module)
  */
-export async function addCallCaseJob(tenantId, caseId) {
+export async function addCallCaseJob(tenantId, caseId, options = {}) {
   const jobId = `CALL_CASE-on-demand-${caseId}-${Date.now()}`;
+  const followUp = Boolean(options.followUp);
 
   const id = await addCaseActionJob(
     CASE_ACTION_JOB_TYPES.CALL_CASE,
-    { tenantId, caseId },
+    { tenantId, caseId, followUp },
     { jobId }
   );
 

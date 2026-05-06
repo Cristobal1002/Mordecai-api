@@ -95,6 +95,7 @@ export const loadExpress = (app) => {
       return (
         req.url.includes('/health') ||
         req.url.includes('/twilio/stream') ||
+        req.url.includes('/twilio/voice') ||
         req.url.includes('/twilio/sms-status') ||
         req.url.includes('/twilio/sms/link-click') ||
         req.url.includes('/twilio/voice/status') ||

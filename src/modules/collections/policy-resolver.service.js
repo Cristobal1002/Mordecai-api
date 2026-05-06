@@ -54,6 +54,33 @@ function normalizeRules(raw) {
     ? paymentChannelsRaw.map((c) => String(c).toLowerCase()).filter(Boolean)
     : SYSTEM_DEFAULT_RULES.payment_channels;
 
+  /** Max calendar days from "today" (tenant TZ via AGREEMENT_INSTALLMENT_CALENDAR_TZ on read) for first payment / first installment date. */
+  const maxDaysRaw =
+    raw.negotiation_first_payment_max_days ?? raw.negotiationFirstPaymentMaxDays ?? null;
+  const negotiationFirstPaymentMaxDays =
+    maxDaysRaw != null && maxDaysRaw !== '' && Number.isFinite(Number(maxDaysRaw))
+      ? Math.max(0, Math.trunc(Number(maxDaysRaw)))
+      : undefined;
+
+  const deadlineRaw =
+    raw.negotiation_first_payment_deadline ?? raw.negotiationFirstPaymentDeadline ?? null;
+  let negotiationFirstPaymentDeadline;
+  if (deadlineRaw) {
+    const d = new Date(deadlineRaw);
+    negotiationFirstPaymentDeadline = Number.isNaN(d.getTime())
+      ? undefined
+      : d.toISOString().slice(0, 10);
+  }
+
+  const capLastWdRaw =
+    raw.negotiation_first_payment_cap_last_weekday_of_month ??
+    raw.negotiationFirstPaymentCapLastWeekdayOfMonth;
+  const negotiationCapLastWeekdayOfMonth =
+    capLastWdRaw === true ||
+    capLastWdRaw === 1 ||
+    capLastWdRaw === '1' ||
+    String(capLastWdRaw || '').toLowerCase() === 'true';
+
   return {
     allowed_plans: allowedPlans.length ? allowedPlans : SYSTEM_DEFAULT_RULES.allowed_plans,
     min_upfront_pct: Number(raw.min_upfront_pct ?? raw.minUpfrontPct ?? SYSTEM_DEFAULT_RULES.min_upfront_pct),
@@ -65,6 +92,13 @@ function normalizeRules(raw) {
     opening_message: typeof openingMessage === 'string' ? openingMessage : '',
     tenant_display_name: typeof tenantDisplayName === 'string' ? tenantDisplayName : '',
     payment_channels: paymentChannels.length ? paymentChannels : SYSTEM_DEFAULT_RULES.payment_channels,
+    ...(negotiationFirstPaymentMaxDays !== undefined
+      ? { negotiation_first_payment_max_days: negotiationFirstPaymentMaxDays }
+      : {}),
+    ...(negotiationFirstPaymentDeadline ? { negotiation_first_payment_deadline: negotiationFirstPaymentDeadline } : {}),
+    ...(negotiationCapLastWeekdayOfMonth
+      ? { negotiation_first_payment_cap_last_weekday_of_month: true }
+      : {}),
   };
 }
 

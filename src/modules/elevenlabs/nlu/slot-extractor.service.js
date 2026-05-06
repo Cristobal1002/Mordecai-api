@@ -1,4 +1,5 @@
 import { CALL_STATES } from "../call-state-machine.js";
+import { NEGOTIATION_CALENDAR_TZ } from "../negotiation-first-payment-window.service.js";
 import { normalizePlanCode } from "../policy/plan-catalog.service.js";
 
 const DELIVERY_CHANNEL_VALUES = new Set(["email", "sms", "both"]);
@@ -43,6 +44,161 @@ const normalizeText = (value) =>
   String(value || "")
     .replace(/\s+/g, " ")
     .trim();
+
+const normalizeYmd = (raw) => {
+  if (raw == null || raw === "") return null;
+  const s = String(raw).trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+};
+
+/**
+ * Prefer ISO YYYY-MM-DD; US-style M/D/YYYY (or M-D-YYYY) for numeric dates; English month names
+ * and ordinals ("May 15th", "the 15th"). "Today" for relative parsing uses NEGOTIATION_CALENDAR_TZ
+ * (see AGREEMENT_INSTALLMENT_CALENDAR_TZ) so it matches the negotiation window, not the server's UTC day.
+ *
+ * Known limitation: slash dates are interpreted as US MM/DD/YYYY. Latin DD/MM with both parts ≤ 12
+ * can resolve to the wrong calendar day; acceptable while the product is US-first.
+ */
+const MONTH_NAMES = {
+  january: 1, jan: 1,
+  february: 2, feb: 2,
+  march: 3, mar: 3,
+  april: 4, apr: 4,
+  may: 5,
+  june: 6, jun: 6,
+  july: 7, jul: 7,
+  august: 8, aug: 8,
+  september: 9, sep: 9, sept: 9,
+  october: 10, oct: 10,
+  november: 11, nov: 11,
+  december: 12, dec: 12,
+};
+
+const getNegotiationCalendarTodayParts = () => {
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: NEGOTIATION_CALENDAR_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const [y, m, d] = ymd.split("-").map((x) => parseInt(x, 10));
+  return { currentYear: y, currentMonth: m, todayDay: d };
+};
+
+/** Reject impossible dates (e.g. Feb 31) — JS Date rolls over silently. */
+const ymdIfValidCalendar = (year, month, day) => {
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    year < 2000 ||
+    year > 2100
+  ) {
+    return null;
+  }
+  const dt = new Date(year, month - 1, day);
+  if (
+    dt.getFullYear() !== year ||
+    dt.getMonth() !== month - 1 ||
+    dt.getDate() !== day
+  ) {
+    return null;
+  }
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+const extractFirstDueDateFromText = (text) => {
+  const s = String(text || "").trim();
+  const { currentYear, currentMonth, todayDay } = getNegotiationCalendarTodayParts();
+
+  // ISO: YYYY-MM-DD
+  const iso = s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (iso) {
+    const ymd = ymdIfValidCalendar(
+      parseInt(iso[1], 10),
+      parseInt(iso[2], 10),
+      parseInt(iso[3], 10),
+    );
+    if (ymd) return ymd;
+  }
+
+  // US: MM/DD/YYYY (or MM-DD-YYYY). DD/MM can be wrong when both ≤ 12 — see module comment.
+  const slashFull = s.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b/);
+  if (slashFull) {
+    const month = parseInt(slashFull[1], 10);
+    const day = parseInt(slashFull[2], 10);
+    const year = parseInt(slashFull[3], 10);
+    const ymd = ymdIfValidCalendar(year, month, day);
+    if (ymd) return ymd;
+  }
+
+  const lower = s.toLowerCase();
+
+  // "May 15", "May 15th", "15th of May", "15 May"
+  const monthNames = Object.keys(MONTH_NAMES).join("|");
+  const monthThenDay = new RegExp(`\\b(${monthNames})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+(\\d{4}))?\\b`, "i");
+  const dayThenMonth = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${monthNames})(?:\\s+(\\d{4}))?\\b`, "i");
+
+  const m1 = lower.match(monthThenDay);
+  if (m1) {
+    const month = MONTH_NAMES[m1[1].toLowerCase()];
+    const day = parseInt(m1[2], 10);
+    const year = m1[3]
+      ? parseInt(m1[3], 10)
+      : month < currentMonth
+        ? currentYear + 1
+        : currentYear;
+    if (month) {
+      const ymd = ymdIfValidCalendar(year, month, day);
+      if (ymd) return ymd;
+    }
+  }
+
+  const m2 = lower.match(dayThenMonth);
+  if (m2) {
+    const day = parseInt(m2[1], 10);
+    const month = MONTH_NAMES[m2[2].toLowerCase()];
+    const year = m2[3]
+      ? parseInt(m2[3], 10)
+      : month < currentMonth
+        ? currentYear + 1
+        : currentYear;
+    if (month) {
+      const ymd = ymdIfValidCalendar(year, month, day);
+      if (ymd) return ymd;
+    }
+  }
+
+  // "the 15th", "on the 10th" — use current or next month context
+  const ordinalOnly = lower.match(/\bthe\s+(\d{1,2})(?:st|nd|rd|th)?\b/);
+  if (!ordinalOnly) {
+    const bareOrdinal = lower.match(/\b(\d{1,2})(?:st|nd|rd|th)\b/);
+    if (bareOrdinal) {
+      const day = parseInt(bareOrdinal[1], 10);
+      if (day >= 1 && day <= 31) {
+        const useNextMonth = day < todayDay;
+        const month = useNextMonth ? (currentMonth % 12) + 1 : currentMonth;
+        const year =
+          useNextMonth && currentMonth === 12 ? currentYear + 1 : currentYear;
+        const ymd = ymdIfValidCalendar(year, month, day);
+        if (ymd) return ymd;
+      }
+    }
+  } else {
+    const day = parseInt(ordinalOnly[1], 10);
+    if (day >= 1 && day <= 31) {
+      const useNextMonth = day < todayDay;
+      const month = useNextMonth ? (currentMonth % 12) + 1 : currentMonth;
+      const year =
+        useNextMonth && currentMonth === 12 ? currentYear + 1 : currentYear;
+      const ymd = ymdIfValidCalendar(year, month, day);
+      if (ymd) return ymd;
+    }
+  }
+
+  return null;
+};
 
 const parseBoolean = (value) => {
   if (typeof value === "boolean") return value;
@@ -391,6 +547,24 @@ export const extractSlotPatch = ({
   );
   if (agreementConfirmed !== null)
     patch.agreement_confirmed = agreementConfirmed;
+
+  const firstDueFromSource = normalizeYmd(
+    source.first_due_date ??
+      source.firstDueDate ??
+      source.first_payment_date ??
+      source.promise_date,
+  );
+  let firstDue = firstDueFromSource;
+  if (
+    !firstDue &&
+    [
+      CALL_STATES.CAPTURE_FIRST_PAYMENT_DATE,
+      CALL_STATES.CONFIRM_AGREEMENT,
+    ].includes(currentState)
+  ) {
+    firstDue = extractFirstDueDateFromText(normalizedUtterance);
+  }
+  if (firstDue) patch.first_due_date = firstDue;
 
   return patch;
 };

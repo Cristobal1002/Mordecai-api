@@ -125,7 +125,7 @@ export const dashboardService = {
           attributes: ['asOfDate', 'totalCents', 'bucket030Cents', 'bucket3160Cents', 'bucket6190Cents', 'bucket90PlusCents'],
         }),
         PaymentAgreement.sum('totalAmountCents', {
-          where: { tenantId, status: 'ACCEPTED' },
+          where: { tenantId, status: { [Op.in]: ['ACTIVE', 'ACCEPTED'] } },
         }),
         getAgentStats(tenantId, startCurrent, endCurrent),
         getActivityFeed(tenantId, 20),
@@ -242,7 +242,7 @@ async function getAgentStats(tenantId, startCurrent, endCurrent) {
     PaymentAgreement.count({
       where: {
         tenantId,
-        status: { [Op.in]: ['ACCEPTED', 'COMPLETED'] },
+        status: { [Op.in]: ['ACTIVE', 'ACCEPTED', 'COMPLETED'] },
         createdAt: { [Op.between]: [start, end] },
       },
     }),
