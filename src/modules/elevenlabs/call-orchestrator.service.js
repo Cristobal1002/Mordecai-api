@@ -34,6 +34,12 @@ import {
 } from "./dialog/slot-manager.service.js";
 import { reduceCallState } from "./dialog/call-reducer.service.js";
 import { getPlanCatalogFromResolvedPolicy } from "./policy/plan-catalog.service.js";
+import {
+  computeFirstPaymentWindowFromPolicyRules,
+  NEGOTIATION_CALENDAR_TZ,
+  sanitizeFirstDueDateSlot,
+  validateFirstDueAgainstWindow,
+} from "./negotiation-first-payment-window.service.js";
 
 const ACTION_CONFIDENCE_THRESHOLD =
   Number(process.env.CALL_ACTION_CONFIDENCE_THRESHOLD) || 0.6;
@@ -543,11 +549,10 @@ export const orchestrateCallStepFromTool = async ({
   intentHint,
   entities,
 }) => {
-  const interaction = await resolveInteraction({
-    tenantId,
-    caseId,
-    interactionId,
-  });
+  const [interaction, tenant] = await Promise.all([
+    resolveInteraction({ tenantId, caseId, interactionId }),
+    Tenant.findByPk(tenantId, { attributes: ["name"] }),
+  ]);
   if (!interaction) {
     return {
       ok: false,
@@ -566,7 +571,6 @@ export const orchestrateCallStepFromTool = async ({
     };
   }
 
-  const tenant = await Tenant.findByPk(tenantId, { attributes: ["name"] });
   const tenantName = String(
     debtCase?.meta?.tenant_display_name ||
       debtCase?.meta?.tenant_name ||
@@ -627,6 +631,33 @@ export const orchestrateCallStepFromTool = async ({
     balanceCents: Number(debtCase.amountDueCents || 0),
     allowedDeliveryChannels,
   });
+
+  const firstPaymentWindow = computeFirstPaymentWindowFromPolicyRules(
+    resolvedPolicy?.rules || {},
+    NEGOTIATION_CALENDAR_TZ,
+  );
+  const dueSanitized = sanitizeFirstDueDateSlot(
+    mergedSlots,
+    firstPaymentWindow,
+  );
+  mergedSlots = dueSanitized.slots;
+  if (dueSanitized.rejected) {
+    mergedSlots = { ...mergedSlots, agreement_confirmed: null };
+  }
+  const firstDueRejected = dueSanitized.rejected
+    ? { reason: dueSanitized.reason || "invalid_format" }
+    : null;
+
+  const dueStr =
+    mergedSlots.first_due_date != null
+      ? String(mergedSlots.first_due_date).trim().slice(0, 10)
+      : "";
+  const dueOk = firstPaymentWindow
+    ? validateFirstDueAgainstWindow(dueStr, firstPaymentWindow).ok
+    : Boolean(dueStr && /^\d{4}-\d{2}-\d{2}$/.test(dueStr));
+  if (!dueOk) {
+    mergedSlots = { ...mergedSlots, agreement_confirmed: null };
+  }
 
   const isQuestionAction = INTERRUPTION_TRIGGER_ACTIONS.has(
     actionDecision.action,
@@ -702,6 +733,8 @@ export const orchestrateCallStepFromTool = async ({
       returnState,
       interruptionTopic,
       stateStack,
+      firstPaymentWindow,
+      firstDueRejected,
     },
   });
 
@@ -713,6 +746,7 @@ export const orchestrateCallStepFromTool = async ({
         upfront_amount_cents: null,
         installments_count: null,
         delivery_channel: null,
+        first_due_date: null,
         agreement_confirmed: null,
       },
     });

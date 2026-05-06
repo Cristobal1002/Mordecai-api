@@ -7,6 +7,7 @@ import {
   DebtCase,
   Debtor,
   PaymentAgreement,
+  PaymentAgreementInstallment,
   PmsLease,
   PmsUnit,
   CollectionEvent,
@@ -247,6 +248,13 @@ export const payService = {
           as: 'paymentAgreement',
           required: false,
           attributes: ['id', 'totalAmountCents', 'downPaymentCents', 'installments', 'status', 'type', 'terms'],
+          include: [
+            {
+              model: PaymentAgreementInstallment,
+              as: 'installmentSchedule',
+              required: false,
+            },
+          ],
         },
       ],
     });
@@ -337,7 +345,28 @@ export const payService = {
     let agreementPayload = null;
     if (agreement) {
       const terms = agreement.terms && typeof agreement.terms === 'object' ? agreement.terms : {};
-      const installmentsArray = Array.isArray(terms.installments) ? terms.installments : [];
+      const installmentsFromTerms = Array.isArray(terms.installments) ? terms.installments : [];
+      const scheduleRows = agreement.installmentSchedule
+        ? [...agreement.installmentSchedule].sort(
+            (x, y) =>
+              (Number(x.installmentNum ?? x.installment_num) || 0) -
+              (Number(y.installmentNum ?? y.installment_num) || 0)
+          )
+        : [];
+      const installmentsSchedule =
+        scheduleRows.length > 0
+          ? scheduleRows.map((row) => ({
+              installmentNum: row.installmentNum ?? row.installment_num,
+              dueDate: row.dueDate ?? row.due_date,
+              amountCents: Number(row.amountCents ?? row.amount_cents ?? 0),
+              status: row.status ?? 'PENDING',
+            }))
+          : installmentsFromTerms.map((i) => ({
+              installmentNum: i.installmentNum ?? i.installment_num ?? null,
+              dueDate: i.dueDate ?? i.due_date,
+              amountCents: i.amountCents ?? i.amount_cents ?? 0,
+              status: i.status ?? 'PENDING',
+            }));
       const proofKeys = Array.isArray(agreement.paymentProofUrls) ? agreement.paymentProofUrls : [];
       const proofViewUrls = await resolveEvidenceUrls(proofKeys);
       agreementPayload = {
@@ -347,11 +376,7 @@ export const payService = {
         installments: agreement.installments,
         status: agreement.status,
         type: agreement.type,
-        installmentsSchedule: installmentsArray.map((i) => ({
-          dueDate: i.dueDate ?? i.due_date,
-          amountCents: i.amountCents ?? i.amount_cents ?? 0,
-          status: i.status ?? 'Pending',
-        })),
+        installmentsSchedule,
         paymentProofUrls: proofViewUrls,
       };
     }

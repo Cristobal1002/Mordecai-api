@@ -17,6 +17,17 @@ import { getBullmqPrefix } from '../../queues/bullmq-queue-options.js';
 
 const ELIGIBLE_STATUSES = ['NEW', 'IN_PROGRESS', 'CONTACTED', 'PROMISE_TO_PAY', 'PAYMENT_PLAN', 'NO_ANSWER', 'REFUSED'];
 
+/** When DB columns are null, recover YYYY-MM-DD from stored tool snapshot (legacy / edge cases). */
+function extractFirstDueYmdFromAgreementTerms(terms) {
+  if (!terms || typeof terms !== 'object') return null;
+  const proposal = terms.proposal ?? terms.payload_proposal;
+  if (!proposal || typeof proposal !== 'object') return null;
+  const raw = proposal.first_due_date ?? proposal.firstDueDate;
+  if (raw == null || raw === '') return null;
+  const s = String(raw).trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
 const CHANNEL_ORDER = ['call', 'sms', 'email', 'whatsapp'];
 const resolveDispatchChannels = (channels = {}) =>
   CHANNEL_ORDER.filter((channel) => channels[channel] === true);
@@ -748,6 +759,31 @@ export const automationService = {
       const plain = a.get ? a.get({ plain: true }) : a;
       const debtCase = plain.debtCase || {};
       const debtor = debtCase.debtor || {};
+      const rawSchedule = Array.isArray(plain.installmentSchedule) ? plain.installmentSchedule : [];
+      const installmentSchedule = [...rawSchedule]
+        .sort(
+          (x, y) =>
+            (Number(x.installmentNum ?? x.installment_num) || 0) -
+            (Number(y.installmentNum ?? y.installment_num) || 0)
+        )
+        .map((row) => ({
+          installmentNum: row.installmentNum ?? row.installment_num,
+          dueDate: row.dueDate ?? row.due_date,
+          amountCents: Number(row.amountCents ?? row.amount_cents ?? 0),
+          status: row.status ?? 'PENDING',
+        }));
+      const fallbackFirstDue = extractFirstDueYmdFromAgreementTerms(plain.terms);
+      const scheduleFirstDue = installmentSchedule[0]?.dueDate ?? null;
+      const promiseDate =
+        plain.promiseDate ||
+        (plain.type === 'PROMISE_TO_PAY'
+          ? fallbackFirstDue || scheduleFirstDue || null
+          : null);
+      const startDate =
+        plain.startDate ||
+        (plain.type === 'INSTALLMENTS'
+          ? fallbackFirstDue || scheduleFirstDue || null
+          : null);
       return {
         id: plain.id,
         debtCaseId: plain.debtCaseId,
@@ -756,14 +792,15 @@ export const automationService = {
         totalAmountCents: plain.totalAmountCents,
         downPaymentCents: plain.downPaymentCents,
         installments: plain.installments,
-        promiseDate: plain.promiseDate,
-        startDate: plain.startDate,
+        promiseDate,
+        startDate,
         paymentLinkUrl: plain.paymentLinkUrl,
         createdAt: plain.createdAt,
         debtorName: debtor.fullName,
         debtorEmail: debtor.email,
         debtorPhone: debtor.phone,
         currency: debtCase.currency || 'USD',
+        installmentSchedule,
       };
     });
   },

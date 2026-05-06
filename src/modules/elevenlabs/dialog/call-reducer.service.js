@@ -1,6 +1,7 @@
 import { CALL_ACTIONS, CALL_STATES } from "../call-state-machine.js";
 import { CALL_DIALOG_ACTIONS } from "../nlu/action-classifier.service.js";
 import { isInstallmentsLikePlan } from "../policy/plan-catalog.service.js";
+import { validateFirstDueAgainstWindow } from "../negotiation-first-payment-window.service.js";
 
 const toDisplayAmount = (amountCents) => {
   const numeric = Number(amountCents || 0) / 100;
@@ -56,11 +57,23 @@ const buildAgreementSummary = ({ slots, planCatalog, currency, facts = {} }) => 
       : "";
   const deliveryChannel =
     planSource.delivery_channel || committedPlan.delivery_channel || "email";
+  const dueRaw =
+    planSource.first_due_date ||
+    slots?.first_due_date ||
+    committedPlan.first_due_date;
+  const dueChunk =
+    dueRaw && String(dueRaw).trim()
+      ? `, first payment on ${String(dueRaw).trim().slice(0, 10)}`
+      : "";
 
-  return `Plan ${planLabel}, upfront ${upfrontAmount} ${currency}${installmentsChunk}, delivery channel ${deliveryChannel}.`;
+  return `Plan ${planLabel}, upfront ${upfrontAmount} ${currency}${installmentsChunk}, delivery channel ${deliveryChannel}${dueChunk}.`;
 };
 
-const resolveAgreementProgressState = ({ slots, planCatalog }) => {
+const resolveAgreementProgressState = ({
+  slots,
+  planCatalog,
+  firstPaymentWindow,
+}) => {
   const planType = String(slots?.plan_type || "")
     .trim()
     .toUpperCase();
@@ -83,6 +96,21 @@ const resolveAgreementProgressState = ({ slots, planCatalog }) => {
 
   if (!slots.delivery_channel) {
     return CALL_STATES.CAPTURE_DELIVERY_CHANNEL;
+  }
+
+  const rawDue =
+    slots.first_due_date != null
+      ? String(slots.first_due_date).trim().slice(0, 10)
+      : "";
+  if (!firstPaymentWindow) {
+    if (!rawDue || !/^\d{4}-\d{2}-\d{2}$/.test(rawDue)) {
+      return CALL_STATES.CAPTURE_FIRST_PAYMENT_DATE;
+    }
+  } else {
+    const v = validateFirstDueAgainstWindow(rawDue, firstPaymentWindow);
+    if (!v.ok) {
+      return CALL_STATES.CAPTURE_FIRST_PAYMENT_DATE;
+    }
   }
 
   if (slots.agreement_confirmed !== true) {
@@ -204,6 +232,28 @@ const buildOptionsAnswer = ({ planCatalog, state }) => {
   return `Your available options are ${options}.${followUp}`;
 };
 
+const buildFirstPaymentDateAsk = ({ window, rejected }) => {
+  if (!window) {
+    return "When can you make your first payment? Please give a specific calendar date, for example using year, month, and day.";
+  }
+  const earliest = window.minDate
+    ? `on or after ${window.minDate}`
+    : "from today";
+  const latest = window.maxDate
+    ? `on or before ${window.maxDate}`
+    : "within policy";
+  const tz = window.timeZone || "negotiation timezone";
+  let err = "";
+  if (rejected?.reason === "too_late") {
+    err = ` That date is too far out. The latest we can schedule the first payment is ${window.maxDate}.`;
+  } else if (rejected?.reason === "too_early") {
+    err = ` The first payment cannot be before ${window.minDate}.`;
+  } else if (rejected?.reason === "invalid_format") {
+    err = " I did not catch a valid date. Please say it again clearly.";
+  }
+  return `When can you make your first payment? I need a calendar date (${earliest}, ${latest}, ${tz} calendar). It must be within the current agreement rules, including before the end of this calendar month.${err}`;
+};
+
 const buildResumePrompt = ({
   returnState,
   debtorName,
@@ -213,6 +263,8 @@ const buildResumePrompt = ({
   currency,
   allowedDeliveryChannels,
   facts,
+  firstPaymentWindow = null,
+  firstDueRejected = null,
 }) => {
   const deliveryFacts = normalizeFacts(facts.last_delivery_result);
   const disputeSummary = normalizeFacts(facts.last_dispute_summary);
@@ -250,6 +302,11 @@ const buildResumePrompt = ({
       return `Now, please choose a delivery channel: ${buildDeliveryOptionsText(
         allowedDeliveryChannels,
       )}.`;
+    case CALL_STATES.CAPTURE_FIRST_PAYMENT_DATE:
+      return buildFirstPaymentDateAsk({
+        window: firstPaymentWindow,
+        rejected: firstDueRejected,
+      });
     case CALL_STATES.CONFIRM_AGREEMENT:
       return `${buildAgreementSummary({
         slots,
@@ -370,6 +427,8 @@ export const reduceCallState = ({ state, action, slots, context }) => {
     ? context.allowedDeliveryChannels
     : [];
   const facts = normalizeFacts(context?.facts);
+  const firstPaymentWindow = context?.firstPaymentWindow || null;
+  const firstDueRejected = context?.firstDueRejected || null;
   const returnState = context?.returnState || null;
   const lastDeliveryResult = normalizeFacts(facts.last_delivery_result);
   const lastDisputeSummary = normalizeFacts(facts.last_dispute_summary);
@@ -424,6 +483,8 @@ export const reduceCallState = ({ state, action, slots, context }) => {
       currency,
       allowedDeliveryChannels,
       facts,
+      firstPaymentWindow,
+      firstDueRejected,
     })}`;
     result.intentLabel = "interruption_answered";
     return result;
@@ -671,6 +732,7 @@ export const reduceCallState = ({ state, action, slots, context }) => {
   const progressState = resolveAgreementProgressState({
     slots,
     planCatalog,
+    firstPaymentWindow,
   });
 
   if (progressState === CALL_STATES.PLAN_SELECTION) {
@@ -717,6 +779,17 @@ export const reduceCallState = ({ state, action, slots, context }) => {
     return result;
   }
 
+  if (progressState === CALL_STATES.CAPTURE_FIRST_PAYMENT_DATE) {
+    result.nextState = CALL_STATES.CAPTURE_FIRST_PAYMENT_DATE;
+    result.speakBack = buildFirstPaymentDateAsk({
+      window: firstPaymentWindow,
+      rejected: firstDueRejected,
+    });
+    result.intentLabel = "first_payment_date_pending";
+    result.flags.requestAgreementSnapshot = true;
+    return result;
+  }
+
   if (progressState === CALL_STATES.CONFIRM_AGREEMENT) {
     result.nextState = CALL_STATES.CONFIRM_AGREEMENT;
     result.speakBack =
@@ -729,9 +802,11 @@ export const reduceCallState = ({ state, action, slots, context }) => {
 
   if (progressState === CALL_STATES.EXECUTE_AGREEMENT) {
     if (
-      ![CALL_STATES.CONFIRM_AGREEMENT, CALL_STATES.EXECUTE_AGREEMENT].includes(
-        state,
-      )
+      ![
+        CALL_STATES.CONFIRM_AGREEMENT,
+        CALL_STATES.EXECUTE_AGREEMENT,
+        CALL_STATES.CAPTURE_FIRST_PAYMENT_DATE,
+      ].includes(state)
     ) {
       result.nextState = CALL_STATES.CONFIRM_AGREEMENT;
       result.speakBack =

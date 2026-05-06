@@ -11,6 +11,7 @@ import {
   PmsProperty,
   CollectionStage,
   PaymentAgreement,
+  PaymentAgreementInstallment,
   CaseDispute,
 } from '../../models/index.js';
 import { Op } from 'sequelize';
@@ -703,6 +704,11 @@ export const automationRepository = {
             required: true,
             attributes: ['id', 'amountDueCents', 'currency', 'status'],
             include: [{ model: Debtor, as: 'debtor', attributes: ['id', 'fullName', 'email', 'phone'] }],
+          },
+          {
+            model: PaymentAgreementInstallment,
+            as: 'installmentSchedule',
+            required: false,
           },
         ],
         order: [['createdAt', 'DESC']],

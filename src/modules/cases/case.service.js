@@ -112,7 +112,7 @@ export const caseService = {
    * Trigger an on-demand call for a debt case. For controlled testing and specific use cases.
    * Enqueues a CALL_CASE job; the worker will process it.
    */
-  triggerCall: async (tenantId, debtCaseId) => {
+  triggerCall: async (tenantId, debtCaseId, options = {}) => {
     const tenant = await tenantRepository.findById(tenantId);
     if (!tenant) throw new NotFoundError('Tenant');
 
@@ -134,7 +134,9 @@ export const caseService = {
 
     await expireStaleCallInteractionsForDebtCase(tenantId, debtCaseId);
 
-    const jobId = await addCallCaseJob(tenantId, debtCaseId);
+    const jobId = await addCallCaseJob(tenantId, debtCaseId, {
+      followUp: Boolean(options.followUp),
+    });
     if (!jobId) {
       throw new BadRequestError(
         'Could not enqueue call. Set REDIS_URL and ensure the worker is running.'

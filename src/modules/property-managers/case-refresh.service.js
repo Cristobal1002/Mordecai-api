@@ -5,6 +5,8 @@
  */
 import { Op } from 'sequelize';
 import { ArBalance, ArCharge, DebtCase, PmsConnection } from '../../models/index.js';
+import { applyPmsBalanceDecreaseToInstallments } from '../payment-agreements/payment-agreement-lifecycle.service.js';
+import { logger } from '../../utils/logger.js';
 
 const PAYMENT_COOLDOWN_MINUTES = Number(process.env.PAYMENT_COOLDOWN_MINUTES) || 1440; // 24h default
 
@@ -101,6 +103,22 @@ export async function refreshCasesFromPms(tenantId, connectionId) {
       updates.nextActionAt = new Date(Date.now() + cooldownMs);
     }
     // else: balance unchanged or increased, don't touch nextActionAt
+
+    if (newBalanceCents < prevBalanceCents) {
+      try {
+        await applyPmsBalanceDecreaseToInstallments({
+          tenantId,
+          debtCaseId: dc.id,
+          prevBalanceCents,
+          newBalanceCents: newBalanceCents,
+        });
+      } catch (err) {
+        logger.warn(
+          { err, debtCaseId: dc.id, tenantId },
+          'Could not sync payment agreement installments after PMS balance change'
+        );
+      }
+    }
 
     await DebtCase.update(updates, { where: { id: dc.id } });
     updated++;
