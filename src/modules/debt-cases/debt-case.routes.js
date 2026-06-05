@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { debtCaseController } from './debt-case.controller.js';
 import { validateRequest } from '../../middlewares/validate-request.middleware.js';
-import { param } from 'express-validator';
+import { param, body } from 'express-validator';
 import { requireAuth } from '../../middlewares/index.js';
 
 const router = Router();
@@ -14,6 +14,10 @@ const validateTenant = [
 const validateCase = [
     ...validateTenant,
     param('caseId').isUUID().withMessage('Invalid Case ID')
+];
+
+const validateMordecaiOperationalBody = [
+    body('active').isBoolean().withMessage('active must be a boolean'),
 ];
 
 const validateCaseId = [
@@ -45,6 +49,16 @@ router.get(
     validateCase,
     validateRequest,
     debtCaseController.getLogs
+);
+
+// PATCH /api/v1/debt-cases/:tenantId/:caseId/mordecai-operational-active
+router.patch(
+    '/:tenantId/:caseId/mordecai-operational-active',
+    requireAuth(),
+    ...validateCase,
+    ...validateMordecaiOperationalBody,
+    validateRequest,
+    debtCaseController.setMordecaiOperationalActive
 );
 
 export default router;

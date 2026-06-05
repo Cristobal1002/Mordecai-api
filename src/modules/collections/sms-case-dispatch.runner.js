@@ -22,6 +22,10 @@ export async function runSmsCaseDispatch({
   });
   if (!debtCase) throw new Error('Debt case not found');
 
+  if (!debtCase.mordecaiOperationalActive) {
+    return { caseId: debtCase.id, skipped: true, reason: 'case_not_operationally_active' };
+  }
+
   let stage = null;
   if (stateId) {
     const state = await CaseAutomationState.findByPk(stateId, {

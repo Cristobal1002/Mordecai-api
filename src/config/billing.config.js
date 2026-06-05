@@ -30,3 +30,24 @@ export const EXTRA_SEAT_CENTS = 3_500; // $35
 
 /** Base included seats */
 export const INCLUDED_SEATS = 2;
+
+/** Free trial: max activated debt cases without Stripe subscription. */
+export const TRIAL_MAX_ACTIVE_CASES = Number(process.env.TRIAL_MAX_ACTIVE_CASES) || 10;
+
+/** Free trial duration in days from subscription created_at (or tenant signup). */
+export const TRIAL_DURATION_DAYS = Number(process.env.TRIAL_DURATION_DAYS) || 30;
+
+/**
+ * Billing estimate for Settings → Billing: `stripe` matches Checkout (platform min fee + metered overage).
+ * `tiers` uses historical UNIT_TIERS marginal pricing only (no Stripe).
+ */
+export const BILLING_ESTIMATE_MODE =
+  (process.env.BILLING_ESTIMATE_MODE || 'tiers').toLowerCase() === 'stripe' ? 'stripe' : 'tiers';
+
+/** Must match worker `STRIPE_INCLUDED_UNITS` and Stripe metered semantics. */
+export const STRIPE_METERED_INCLUDED_UNITS = Number(process.env.STRIPE_INCLUDED_UNITS) || 200;
+
+/**
+ * Cents per PMS unit on metered overage — align with Stripe Price for `pms_units_metered`.
+ */
+export const STRIPE_METERED_RATE_CENTS = Number(process.env.STRIPE_METERED_RATE_CENTS) || 150;

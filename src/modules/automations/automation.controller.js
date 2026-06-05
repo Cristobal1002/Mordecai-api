@@ -229,7 +229,28 @@ export const automationController = {
   getAgreements: async (req, res, next) => {
     try {
       const { tenantId, automationId } = req.params;
-      const result = await automationService.getAgreements(tenantId, automationId);
+      const ALLOWED = new Set([
+        'PROPOSED',
+        'PENDING',
+        'ACTIVE',
+        'ACCEPTED',
+        'SUPERSEDED',
+        'CANCELLED',
+        'COMPLETED',
+        'BROKEN',
+      ]);
+      const raw = req.query.status;
+      let agreementStatuses = null;
+      if (raw != null && String(raw).trim()) {
+        agreementStatuses = String(raw)
+          .split(',')
+          .map((s) => s.trim().toUpperCase())
+          .filter((s) => ALLOWED.has(s));
+        if (agreementStatuses.length === 0) agreementStatuses = null;
+      }
+      const result = await automationService.getAgreements(tenantId, automationId, {
+        agreementStatuses,
+      });
       res.ok(result, 'Automation agreements retrieved successfully');
     } catch (error) {
       next(error);

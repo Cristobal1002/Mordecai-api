@@ -28,6 +28,33 @@ function extractFirstDueYmdFromAgreementTerms(terms) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 }
 
+/** Small, UI-safe slice of debt_cases.meta (call summaries, etc.). */
+function pickDebtCaseMetaHighlights(meta) {
+  if (!meta || typeof meta !== 'object') return null;
+  const candidates = ['last_call_summary', 'call_summary', 'summary', 'last_summary'];
+  for (const k of candidates) {
+    const v = meta[k];
+    if (typeof v === 'string' && v.trim()) {
+      return { summarySnippet: v.trim().slice(0, 500) };
+    }
+  }
+  return null;
+}
+
+function summarizeAgreementTermsForUi(terms) {
+  if (!terms || typeof terms !== 'object') return null;
+  const proposal = terms.proposal ?? terms.payload_proposal ?? {};
+  const planType = proposal.plan_type ?? proposal.planType ?? terms.plan_type ?? null;
+  const rawDue = proposal.first_due_date ?? proposal.firstDueDate;
+  const firstDueStr =
+    rawDue != null && rawDue !== '' ? String(rawDue).trim().slice(0, 10) : '';
+  return {
+    planType: planType != null ? String(planType) : null,
+    firstDueDate: /^\d{4}-\d{2}-\d{2}$/.test(firstDueStr) ? firstDueStr : null,
+    interactionId: terms.interaction_id ?? terms.interactionId ?? null,
+  };
+}
+
 const CHANNEL_ORDER = ['call', 'sms', 'email', 'whatsapp'];
 const resolveDispatchChannels = (channels = {}) =>
   CHANNEL_ORDER.filter((channel) => channels[channel] === true);
@@ -325,6 +352,16 @@ export const automationService = {
           reason: plain.reason,
           status: plain.status,
           openedAt: plain.openedAt,
+          notes: plain.notes ?? null,
+          evidenceUrls: Array.isArray(plain.evidenceUrls)
+            ? plain.evidenceUrls
+            : Array.isArray(plain.evidence_urls)
+              ? plain.evidence_urls
+              : [],
+          openedBy: plain.openedBy ?? plain.opened_by ?? null,
+          resolvedBy: plain.resolvedBy ?? plain.resolved_by ?? null,
+          resolvedAt: plain.resolvedAt ?? plain.resolved_at ?? null,
+          resolution: plain.resolution ?? null,
         };
       });
       return { data, total };
@@ -375,6 +412,14 @@ export const automationService = {
         leaseStatus: pmsLease.status ?? null,
         pmsLeaseId: debtCase.pmsLeaseId ?? debtCase.pms_lease_id ?? null,
         approvalStatus: debtCase.approvalStatus ?? debtCase.approval_status,
+        debtCaseStatus: debtCase.status ?? null,
+        riskTier: debtCase.riskTier ?? debtCase.risk_tier ?? null,
+        dueDate: debtCase.dueDate ?? debtCase.due_date ?? null,
+        lastContactedAt: debtCase.lastContactedAt ?? debtCase.last_contacted_at ?? null,
+        closedAt: debtCase.closedAt ?? debtCase.closed_at ?? null,
+        casePublicId: debtCase.casePublicId ?? debtCase.case_public_id ?? null,
+        internalNotes: debtCase.internalNotes ?? debtCase.internal_notes ?? null,
+        metaHighlights: pickDebtCaseMetaHighlights(meta),
         currentStage: plain.currentStage
           ? {
               id: plain.currentStage.id,
@@ -386,8 +431,11 @@ export const automationService = {
         lastAttemptAt: plain.lastAttemptAt,
         lastOutcome: plain.lastOutcome,
         lastOutcomeAt: plain.lastOutcomeAt,
+        attemptsWeekCount: plain.attemptsWeekCount ?? plain.attempts_week_count ?? 0,
         status: plain.status,
         promiseDueDate: plain.promiseDueDate,
+        mordecaiOperationalActive:
+          debtCase.mordecaiOperationalActive ?? debtCase.mordecai_operational_active ?? false,
       };
     });
 
@@ -693,7 +741,14 @@ export const automationService = {
           amountDueCents: dc.amountDueCents ?? dc.amount_due_cents,
           currency: dc.currency || 'USD',
           daysPastDue: dc.daysPastDue ?? dc.days_past_due,
+          dueDate: dc.dueDate ?? dc.due_date ?? null,
+          status: dc.status ?? null,
           approvalStatus: dc.approvalStatus ?? dc.approval_status,
+          lastContactedAt: dc.lastContactedAt ?? dc.last_contacted_at ?? null,
+          closedAt: dc.closedAt ?? dc.closed_at ?? null,
+          riskTier: dc.riskTier ?? dc.risk_tier ?? null,
+          internalNotes: dc.internalNotes ?? dc.internal_notes ?? null,
+          metaHighlights: pickDebtCaseMetaHighlights(dc.meta || {}),
           debtorName: debtor?.fullName ?? debtor?.full_name,
           debtorId: debtor?.id ?? null,
           debtorEmail: debtor?.email ?? null,
@@ -750,11 +805,13 @@ export const automationService = {
     };
   },
 
-  getAgreements: async (tenantId, automationId) => {
+  getAgreements: async (tenantId, automationId, options = {}) => {
     const automation = await automationRepository.findById(automationId, tenantId);
     if (!automation) throw new NotFoundError('Automation');
 
-    const agreements = await automationRepository.findAgreements(automationId, tenantId);
+    const agreements = await automationRepository.findAgreements(automationId, tenantId, {
+      agreementStatuses: options.agreementStatuses,
+    });
     return agreements.map((a) => {
       const plain = a.get ? a.get({ plain: true }) : a;
       const debtCase = plain.debtCase || {};
@@ -771,6 +828,14 @@ export const automationService = {
           dueDate: row.dueDate ?? row.due_date,
           amountCents: Number(row.amountCents ?? row.amount_cents ?? 0),
           status: row.status ?? 'PENDING',
+          paidAt: row.paidAt ?? row.paid_at ?? null,
+          paidAmountCents:
+            row.paidAmountCents != null
+              ? Number(row.paidAmountCents)
+              : row.paid_amount_cents != null
+                ? Number(row.paid_amount_cents)
+                : null,
+          source: row.source ?? null,
         }));
       const fallbackFirstDue = extractFirstDueYmdFromAgreementTerms(plain.terms);
       const scheduleFirstDue = installmentSchedule[0]?.dueDate ?? null;
@@ -784,6 +849,8 @@ export const automationService = {
         (plain.type === 'INSTALLMENTS'
           ? fallbackFirstDue || scheduleFirstDue || null
           : null);
+      const proofUrls = plain.paymentProofUrls ?? plain.payment_proof_urls;
+      const proofList = Array.isArray(proofUrls) ? proofUrls : [];
       return {
         id: plain.id,
         debtCaseId: plain.debtCaseId,
@@ -796,6 +863,11 @@ export const automationService = {
         startDate,
         paymentLinkUrl: plain.paymentLinkUrl,
         createdAt: plain.createdAt,
+        createdBy: plain.createdBy ?? plain.created_by ?? null,
+        provider: plain.provider ?? null,
+        providerRef: plain.providerRef ?? plain.provider_ref ?? null,
+        paymentProofUrls: proofList,
+        termsSummary: summarizeAgreementTermsForUi(plain.terms),
         debtorName: debtor.fullName,
         debtorEmail: debtor.email,
         debtorPhone: debtor.phone,
@@ -826,11 +898,21 @@ export const automationService = {
         include: [{ model: Debtor, as: 'debtor', attributes: ['id', 'phone', 'email'] }],
         limit: 500,
       });
+      if (debtCases.length !== options.debtCaseIds.length) {
+        throw new NotFoundError('DebtCase');
+      }
+      const inactive = debtCases.filter((dc) => !dc.mordecaiOperationalActive);
+      if (inactive.length > 0) {
+        throw new ConflictError(
+          'Activate the debt case in Mordecai (free trial or subscription) before enrolling it in an automation.'
+        );
+      }
     } else {
       const alreadyEnrolled = await automationRepository.findEnrolledDebtCaseIds(automationId);
       debtCases = await DebtCase.findAll({
         where: {
           tenantId,
+          mordecaiOperationalActive: true,
           status: { [Op.in]: ELIGIBLE_STATUSES },
           ...(alreadyEnrolled.length > 0 ? { id: { [Op.notIn]: alreadyEnrolled } } : {}),
         },
@@ -922,6 +1004,10 @@ export const automationService = {
     });
 
     if (!state) throw new NotFoundError('Case is not enrolled in this automation');
+
+    if (!state.debtCase?.mordecaiOperationalActive) {
+      throw new ConflictError('Case is paused in Mordecai; activate it before running the strategy.');
+    }
 
     const approvalStatus = state.debtCase?.approvalStatus ?? state.debtCase?.approval_status;
     if (approvalStatus !== 'APPROVED') {
@@ -1087,6 +1173,9 @@ export const automationService = {
     });
 
     if (!state) throw new NotFoundError('Case is not enrolled in this automation');
+    if (!state.debtCase?.mordecaiOperationalActive) {
+      throw new ConflictError('Case is paused in Mordecai; activate it before sending SMS.');
+    }
     if (!isStageChannelEnabled(state, 'sms')) {
       throw new ConflictError('SMS is disabled for this case stage');
     }
@@ -1194,6 +1283,9 @@ export const automationService = {
     });
 
     if (!state) throw new NotFoundError('Case is not enrolled in this automation');
+    if (!state.debtCase?.mordecaiOperationalActive) {
+      throw new ConflictError('Case is paused in Mordecai; activate it before sending email.');
+    }
     if (!isStageChannelEnabled(state, 'email')) {
       throw new ConflictError('Email is disabled for this case stage');
     }

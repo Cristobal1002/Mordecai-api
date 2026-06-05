@@ -32,5 +32,16 @@ export const debtCaseController = {
         } catch (error) {
             next(error);
         }
-    }
+    },
+
+    setMordecaiOperationalActive: async (req, res, next) => {
+        try {
+            const { tenantId, caseId } = req.params;
+            const active = Boolean(req.body?.active);
+            const result = await debtCaseService.setMordecaiOperationalActive(tenantId, caseId, active, req);
+            res.ok(result, active ? 'Case activated for Mordecai' : 'Case paused in Mordecai');
+        } catch (error) {
+            next(error);
+        }
+    },
 };

@@ -562,6 +562,7 @@ export const propertyManagersService = {
           daysPastDue,
           dueDate: dueDate || undefined,
           status: 'NEW',
+          mordecaiOperationalActive: false,
           nextActionAt: new Date(),
           meta,
         });

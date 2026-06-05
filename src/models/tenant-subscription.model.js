@@ -56,6 +56,46 @@ export class TenantSubscription extends Model {
           allowNull: true,
           field: 'billing_anchor',
         },
+        stripeSubscriptionId: {
+          type: DataTypes.STRING(64),
+          allowNull: true,
+          field: 'stripe_subscription_id',
+        },
+        stripePlatformItemId: {
+          type: DataTypes.STRING(64),
+          allowNull: true,
+          field: 'stripe_platform_item_id',
+        },
+        stripeUnitsItemId: {
+          type: DataTypes.STRING(64),
+          allowNull: true,
+          field: 'stripe_units_item_id',
+        },
+        stripeCallsItemId: {
+          type: DataTypes.STRING(64),
+          allowNull: true,
+          field: 'stripe_calls_item_id',
+        },
+        stripeWlItemId: {
+          type: DataTypes.STRING(64),
+          allowNull: true,
+          field: 'stripe_wl_item_id',
+        },
+        stripeSeatsItemId: {
+          type: DataTypes.STRING(64),
+          allowNull: true,
+          field: 'stripe_seats_item_id',
+        },
+        currentPeriodStart: {
+          type: DataTypes.DATE,
+          allowNull: true,
+          field: 'current_period_start',
+        },
+        currentPeriodEnd: {
+          type: DataTypes.DATE,
+          allowNull: true,
+          field: 'current_period_end',
+        },
         notes: {
           type: DataTypes.TEXT,
           allowNull: true,

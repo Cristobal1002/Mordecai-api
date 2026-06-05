@@ -1,6 +1,7 @@
 import { tenantRepository } from './tenant.repository.js';
 import { sequelize } from '../../config/database.js';
-import { TenantUser, User } from '../../models/index.js';
+import { TenantUser, User, TenantSubscription } from '../../models/index.js';
+import { buildNewSubscriptionDefaults } from '../billing/billing-trial.service.js';
 import { getAuthIdentity } from '../../utils/auth-identity.js';
 import { userService } from '../users/user.service.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../errors/index.js';
@@ -101,6 +102,14 @@ export const tenantService = {
           userId: user.id,
           role: 'owner',
           status: 'active',
+        },
+        { transaction }
+      );
+
+      await TenantSubscription.create(
+        {
+          tenantId: tenant.id,
+          ...buildNewSubscriptionDefaults(),
         },
         { transaction }
       );

@@ -8,6 +8,7 @@ import {
   resumeCaseValidator,
   triggerCallValidator,
   updateDebtorForCaseValidator,
+  patchCaseInternalNotesValidator,
 } from './case.validator.js';
 import { validateRequest } from '../../middlewares/validate-request.middleware.js';
 
@@ -56,6 +57,15 @@ router.patch(
   updateDebtorForCaseValidator,
   validateRequest,
   caseController.updateDebtorForCase
+);
+
+// PATCH /api/v1/tenants/:tenantId/cases/:caseId/internal-notes — staff notes (not from PMS)
+router.patch(
+  '/:tenantId/cases/:caseId/internal-notes',
+  requireAuth(),
+  patchCaseInternalNotesValidator,
+  validateRequest,
+  caseController.patchInternalNotes
 );
 
 export default router;

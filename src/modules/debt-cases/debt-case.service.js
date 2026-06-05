@@ -1,9 +1,12 @@
 
-import { DebtCase, InteractionLog, Debtor, FlowPolicy, TenantUser } from '../../models/index.js';
-import { NotFoundError, ForbiddenError } from '../../errors/index.js';
+import { DebtCase, InteractionLog, Debtor, FlowPolicy, TenantUser, TenantSubscription } from '../../models/index.js';
+import { NotFoundError, ForbiddenError, ConflictError } from '../../errors/index.js';
+import { countBillableDebtCases } from '../billing/billable-debt-cases.js';
+import { billingTrialService } from '../billing/billing-trial.service.js';
 import { buildPaymentInstructions } from '../pay/payment-instructions.service.js';
 import { getAuthIdentity } from '../../utils/auth-identity.js';
 import { userService } from '../users/user.service.js';
+import { tenantService } from '../tenants/tenant.service.js';
 
 export const debtCaseService = {
     list: async (tenantId, params = {}) => {
@@ -58,5 +61,39 @@ export const debtCaseService = {
             debtorId: debtCase.debtorId,
             pmsLeaseId,
         });
-    }
+    },
+
+    setMordecaiOperationalActive: async (tenantId, caseId, active, req) => {
+        await tenantService.requireTenantAdmin(tenantId, req);
+        const debtCase = await DebtCase.findOne({ where: { id: caseId, tenantId } });
+        if (!debtCase) throw new NotFoundError('DebtCase');
+
+        if (active === true && !debtCase.mordecaiOperationalActive) {
+            const sub = await TenantSubscription.findOne({ where: { tenantId } });
+            if (!sub) {
+                throw new ConflictError(
+                    'Subscribe and complete billing setup before activating cases for Mordecai.'
+                );
+            }
+            await billingTrialService.ensureTrialEndsAt(sub);
+
+            if (sub.stripeSubscriptionId) {
+                const st = String(sub.status || '').toLowerCase();
+                if (!['active', 'trialing'].includes(st)) {
+                    throw new ConflictError('Subscription must be active or trialing to activate cases.');
+                }
+            } else {
+                const billableCount = await countBillableDebtCases(tenantId);
+                billingTrialService.assertCanActivateOnTrial(sub, billableCount);
+            }
+        }
+
+        await debtCase.update({ mordecaiOperationalActive: active });
+        const plain = debtCase.get({ plain: true });
+        return {
+            id: plain.id,
+            tenantId: plain.tenantId,
+            mordecaiOperationalActive: plain.mordecaiOperationalActive,
+        };
+    },
 };

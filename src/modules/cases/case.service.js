@@ -1,6 +1,6 @@
 import { caseRepository } from './case.repository.js';
 import { tenantRepository } from '../tenants/tenant.repository.js';
-import { NotFoundError, BadRequestError } from '../../errors/index.js';
+import { NotFoundError, BadRequestError, ConflictError } from '../../errors/index.js';
 import { Debtor, PmsDebtor } from '../../models/index.js';
 import { addCallCaseJob, getCaseActionsQueue } from '../../queues/case-actions.queue.js';
 import { expireStaleCallInteractionsForDebtCase } from '../elevenlabs/eleven.service.js';
@@ -18,14 +18,18 @@ export const caseService = {
       id: plain.id,
       tenantId: plain.tenantId,
       debtorId: plain.debtorId,
+      casePublicId: plain.casePublicId ?? plain.case_public_id ?? null,
       amountDueCents: plain.amountDueCents,
       currency: plain.currency,
       daysPastDue: plain.daysPastDue,
       dueDate: plain.dueDate,
       status: plain.status,
+      riskTier: plain.riskTier ?? plain.risk_tier ?? null,
       lastContactedAt: plain.lastContactedAt,
       nextActionAt: plain.nextActionAt,
       closedAt: plain.closedAt,
+      internalNotes: plain.internalNotes ?? plain.internal_notes ?? null,
+      mordecaiOperationalActive: plain.mordecaiOperationalActive ?? plain.mordecai_operational_active ?? false,
       debtor: plain.debtor,
       automationStates: (plain.automationStates || []).map((s) => ({
         id: s.id,
@@ -128,6 +132,9 @@ export const caseService = {
 
     const plain = debtCase.get ? debtCase.get({ plain: true }) : debtCase;
     const debtor = plain.debtor;
+    if (!plain.mordecaiOperationalActive) {
+      throw new ConflictError('Case is paused in Mordecai; activate it before placing calls.');
+    }
     if (!debtor?.phone) {
       throw new BadRequestError('Case has no phone number. Add a phone to the debtor to place a call.');
     }
@@ -209,5 +216,24 @@ export const caseService = {
       email: debtor.email,
       phone: debtor.phone,
     };
+  },
+
+  /** Staff-only notes on the case (not from PMS). */
+  updateInternalNotes: async (tenantId, debtCaseId, body) => {
+    const tenant = await tenantRepository.findById(tenantId);
+    if (!tenant) throw new NotFoundError('Tenant');
+
+    const debtCase = await caseRepository.findDebtCaseById(debtCaseId, tenantId);
+    if (!debtCase) throw new NotFoundError('Case');
+
+    const raw = body.internalNotes;
+    const notes =
+      raw === null || raw === undefined ? null : String(raw);
+    if (notes != null && notes.length > 20_000) {
+      throw new BadRequestError('internalNotes exceeds maximum length (20000 characters)');
+    }
+
+    await debtCase.update({ internalNotes: notes });
+    return { debtCaseId, internalNotes: notes };
   },
 };

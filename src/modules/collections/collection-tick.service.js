@@ -98,6 +98,7 @@ export async function runCollectionTick() {
             model: DebtCase,
             as: 'debtCase',
             required: true,
+            where: { mordecaiOperationalActive: true },
             include: [{ model: Debtor, as: 'debtor', required: false }],
           },
           {

@@ -18,3 +18,7 @@ export const updateSubscriptionValidator = [
     .withMessage('status must be one of: trialing, active, suspended'),
   body('notes').optional().isString().withMessage('notes must be a string'),
 ];
+
+export const createCheckoutValidator = [tenantIdParam];
+export const createSubscribeIntentValidator = [tenantIdParam];
+export const createPortalValidator = [tenantIdParam];
