@@ -1,11 +1,83 @@
-import { TenantSubscription, PmsUnit, TenantUser } from '../../models/index.js';
+import { Tenant, TenantSubscription, PmsUnit, TenantUser } from '../../models/index.js';
+import { countBillableDebtCases } from './billable-debt-cases.js';
+import { billingTrialService, buildNewSubscriptionDefaults } from './billing-trial.service.js';
 import {
+  BILLING_ESTIMATE_MODE,
   MINIMUM_MONTHLY_CENTS,
   CALLS_PLAN_CENTS,
   WHITE_LABEL_CENTS,
   EXTRA_SEAT_CENTS,
   INCLUDED_SEATS,
+  STRIPE_METERED_INCLUDED_UNITS,
+  STRIPE_METERED_RATE_CENTS,
 } from '../../config/billing.config.js';
+
+/**
+ * Stripe-aligned: fixed platform minimum + metered overage above included units (see worker usage report).
+ * @private
+ */
+function calculateBillStripe({
+  unitCount,
+  callsPlanCents,
+  whiteLabelCents,
+  seatsCents,
+}) {
+  const includedCap = Math.max(0, STRIPE_METERED_INCLUDED_UNITS);
+  const rate = Math.max(0, STRIPE_METERED_RATE_CENTS);
+  const overage = Math.max(0, unitCount - includedCap);
+  const meteredCents = overage * rate;
+  const baseCents = MINIMUM_MONTHLY_CENTS + meteredCents;
+
+  const tiers = [];
+  if (unitCount > 0 && includedCap > 0) {
+    const includedRowUnits = Math.min(unitCount, includedCap);
+    tiers.push({
+      label: `Included active cases (first ${includedCap})`,
+      units: includedRowUnits,
+      rateCents: 0,
+      subtotalCents: 0,
+    });
+  }
+  if (overage > 0 && rate > 0) {
+    tiers.push({
+      label: 'Active cases (metered overage)',
+      units: overage,
+      rateCents: rate,
+      subtotalCents: meteredCents,
+    });
+  }
+
+  const checkoutStyleSubtotalCents =
+    MINIMUM_MONTHLY_CENTS +
+    callsPlanCents +
+    whiteLabelCents +
+    seatsCents +
+    (overage > 0 ? rate : 0);
+
+  return {
+    unitCount,
+    baseCents,
+    minimumApplied: false,
+    tiers: tiers.filter((t) => t.units > 0),
+    callsPlanCents,
+    whiteLabelCents,
+    seatsCents,
+    totalCents: baseCents + callsPlanCents + whiteLabelCents + seatsCents,
+    pricingModel: 'stripe',
+    stripeBreakdown: {
+      platformBaseCents: MINIMUM_MONTHLY_CENTS,
+      includedPmsUnits: includedCap,
+      meteredOverageUnits: overage,
+      meteredRateCents: rate,
+      meteredSubtotalCents: meteredCents,
+      /**
+       * Stripe Checkout often adds only the metered *unit amount* to the on-page subtotal,
+       * not quantity × usage. Matches “$300 + $1.50 + add-ons” style totals before invoicing.
+       */
+      checkoutStyleSubtotalCents,
+    },
+  };
+}
 
 /**
  * Lógica interna de cálculo de factura.
@@ -22,6 +94,18 @@ function calculateBill({
   const callsPlanCents = CALLS_PLAN_CENTS[callsPlan] ?? CALLS_PLAN_CENTS.none;
   const whiteLabelCents = whiteLabelEnabled ? WHITE_LABEL_CENTS : 0;
   const seatsCents = Math.max(0, extraSeats) * EXTRA_SEAT_CENTS;
+
+  if (
+    BILLING_ESTIMATE_MODE === 'stripe' &&
+    (customRatePerUnitCents == null || customRatePerUnitCents <= 0)
+  ) {
+    return calculateBillStripe({
+      unitCount,
+      callsPlanCents,
+      whiteLabelCents,
+      seatsCents,
+    });
+  }
 
   let baseCents;
   let minimumApplied = false;
@@ -71,12 +155,18 @@ function calculateBill({
     whiteLabelCents,
     seatsCents,
     totalCents,
+    pricingModel: 'tiers',
+    stripeBreakdown: null,
   };
 }
 
 export const billingService = {
   getUsageSummary: async (tenantId) => {
-    const unitCountVal = await PmsUnit.count({ where: { tenantId } });
+    const [billableCaseCount, pmsUnitCount] = await Promise.all([
+      countBillableDebtCases(tenantId),
+      PmsUnit.count({ where: { tenantId } }),
+    ]);
+    const unitCountVal = billableCaseCount;
 
     const currentSeats = await TenantUser.count({
       where: { tenantId, status: 'active' },
@@ -84,8 +174,11 @@ export const billingService = {
 
     const [subscription] = await TenantSubscription.findOrCreate({
       where: { tenantId },
-      defaults: { status: 'trialing', callsPlan: 'none' },
+      defaults: buildNewSubscriptionDefaults(),
     });
+    await billingTrialService.ensureTrialEndsAt(subscription);
+
+    const tenant = await Tenant.findByPk(tenantId, { attributes: ['id', 'stripeCustomerId'] });
 
     const bill = calculateBill({
       unitCount: unitCountVal,
@@ -95,18 +188,24 @@ export const billingService = {
       customRatePerUnitCents: subscription.customRatePerUnitCents,
     });
 
+    const trial = billingTrialService.getTrialSummary(subscription, unitCountVal);
+
     return {
       unitCount: unitCountVal,
+      pmsUnitCount,
       currentSeats,
       includedSeats: INCLUDED_SEATS,
       extraSeats: subscription.extraSeats ?? 0,
+      stripeCustomerId: tenant?.stripeCustomerId ?? null,
       subscription: {
         callsPlan: subscription.callsPlan ?? 'none',
         whiteLabelEnabled: subscription.whiteLabelEnabled ?? false,
         extraSeats: subscription.extraSeats ?? 0,
         status: subscription.status ?? 'trialing',
         trialEndsAt: subscription.trialEndsAt,
+        stripeSubscriptionId: subscription.stripeSubscriptionId ?? null,
       },
+      trial,
       bill,
     };
   },
@@ -123,13 +222,24 @@ export const billingService = {
     if (data.status !== undefined) updates.status = data.status;
     if (data.notes !== undefined) updates.notes = data.notes;
 
+    let row;
     if (existing) {
-      await existing.update(updates);
+      row = await existing.update(updates);
     } else {
-      await TenantSubscription.create({
+      row = await TenantSubscription.create({
         tenantId,
         ...updates,
       });
+    }
+
+    // If Stripe subscription exists, keep Stripe items in sync with add-ons.
+    if (row?.stripeSubscriptionId) {
+      try {
+        const { stripeBillingService } = await import('./stripe-billing.service.js');
+        await stripeBillingService.syncSubscriptionItemsFromDb(tenantId);
+      } catch (_err) {
+        // Non-fatal: UI can still show updated config; Stripe sync is retried via webhook/ops.
+      }
     }
 
     return billingService.getUsageSummary(tenantId);

@@ -69,4 +69,14 @@ export const caseController = {
       next(error);
     }
   },
+
+  patchInternalNotes: async (req, res, next) => {
+    try {
+      const { tenantId, caseId } = req.params;
+      const result = await caseService.updateInternalNotes(tenantId, caseId, req.body || {});
+      res.ok(result, 'Case notes updated');
+    } catch (error) {
+      next(error);
+    }
+  },
 };

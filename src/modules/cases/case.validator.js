@@ -29,6 +29,16 @@ export const resumeCaseValidator = [
 
 export const triggerCallValidator = [tenantIdParam, caseIdParam];
 
+export const patchCaseInternalNotesValidator = [
+  tenantIdParam,
+  caseIdParam,
+  body('internalNotes')
+    .optional({ nullable: true })
+    .isString()
+    .isLength({ max: 20000 })
+    .withMessage('internalNotes must be a string at most 20000 characters'),
+];
+
 export const updateDebtorForCaseValidator = [
   tenantIdParam,
   caseIdParam,

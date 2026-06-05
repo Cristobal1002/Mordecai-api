@@ -45,6 +45,7 @@ import { PaymentLink } from './payment-link.model.js';
 import { CaseDispute } from './case-dispute.model.js';
 import { TenantSubscription } from './tenant-subscription.model.js';
 import { StripeBillingPrice } from './stripe-billing-price.model.js';
+import { StripeWebhookEvent } from './stripe-webhook-event.model.js';
 import { DiscoverySession } from './discovery-session.model.js';
 
 export const initModels = (sequelize) => {
@@ -92,6 +93,7 @@ export const initModels = (sequelize) => {
   CaseDispute.initModel(sequelize);
   TenantSubscription.initModel(sequelize);
   StripeBillingPrice.initModel(sequelize);
+  StripeWebhookEvent.initModel(sequelize);
   DiscoverySession.initModel(sequelize);
 
   // Definir relaciones
@@ -332,6 +334,7 @@ export {
   CaseDispute,
   TenantSubscription,
   StripeBillingPrice,
+  StripeWebhookEvent,
   DiscoverySession,
 };
 

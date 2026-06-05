@@ -163,6 +163,7 @@ export async function buildNewCasesFromPms(tenantId, connectionId) {
         daysPastDue: aging.daysPastDue,
         dueDate: aging.dueDate || undefined,
         status: 'NEW',
+        mordecaiOperationalActive: false,
         nextActionAt: new Date(),
         meta,
       });

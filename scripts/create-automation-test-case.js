@@ -152,6 +152,7 @@ async function main() {
     daysPastDue: dpd,
     dueDate: dueDateStr,
     status: 'NEW',
+    mordecaiOperationalActive: true,
     approvalStatus: 'APPROVED',
     nextActionAt: new Date(),
     meta: {

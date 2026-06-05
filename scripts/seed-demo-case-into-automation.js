@@ -82,6 +82,7 @@ async function main() {
     daysPastDue: DEMO.case.daysPastDue,
     dueDate: due.toISOString().slice(0, 10),
     status: 'NEW',
+    mordecaiOperationalActive: true,
     approvalStatus: 'APPROVED',
     meta: DEMO.case.meta,
   });

@@ -9,8 +9,9 @@ export class StripeBillingPrice extends Model {
       {
         id: {
           type: DataTypes.UUID,
-          defaultValue: DataTypes.UUIDV4,
           primaryKey: true,
+          // DB default so INSERTs without id (SQL client, seeds) work; matches migration 061 intent.
+          defaultValue: sequelize.literal('gen_random_uuid()'),
         },
         billingKey: {
           type: DataTypes.STRING(64),
@@ -51,6 +52,14 @@ export class StripeBillingPrice extends Model {
         tableName: 'stripe_billing_prices',
         timestamps: true,
         underscored: true,
+        // DB columns are snake_case (field + underscored). Index must use those names, not JS attrs.
+        indexes: [
+          {
+            name: 'uq_stripe_billing_prices_key_mode',
+            unique: true,
+            fields: [{ name: 'billing_key' }, { name: 'stripe_mode' }],
+          },
+        ],
       },
     );
     return StripeBillingPrice;

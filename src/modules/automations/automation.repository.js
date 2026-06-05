@@ -585,7 +585,7 @@ export const automationRepository = {
     try {
       const enrolledIds = await automationRepository.findEnrolledDebtCaseIds(automationId);
 
-      const [total, pendingApproval, active, excluded, disputes, stageRows] = await Promise.all([
+      const [total, pendingApproval, active, excluded, disputes, brokenAgreements, stageRows] = await Promise.all([
         CaseAutomationState.count({ where: { automationId } }),
         automationRepository.countCaseStates(automationId, {}, { tab: 'pending' }),
         automationRepository.countCaseStates(automationId, {}, { tab: 'active' }),
@@ -594,6 +594,11 @@ export const automationRepository = {
           ? 0
           : CaseDispute.count({
               where: { tenantId, debtCaseId: { [Op.in]: enrolledIds }, status: 'OPEN' },
+            }),
+        enrolledIds.length === 0
+          ? 0
+          : PaymentAgreement.count({
+              where: { tenantId, debtCaseId: { [Op.in]: enrolledIds }, status: 'BROKEN' },
             }),
         CaseAutomationState.findAll({
           where: { automationId, status: 'active' },
@@ -665,6 +670,7 @@ export const automationRepository = {
           active,
           excluded,
           disputes,
+          brokenAgreements,
           highDpd: highDpdCount,
         },
         stages,
@@ -695,8 +701,14 @@ export const automationRepository = {
       const debtCaseIds = await automationRepository.findEnrolledDebtCaseIds(automationId, options);
       if (debtCaseIds.length === 0) return [];
 
+      const whereClause = { debtCaseId: { [Op.in]: debtCaseIds }, tenantId };
+      const statuses = options.agreementStatuses;
+      if (Array.isArray(statuses) && statuses.length > 0) {
+        whereClause.status = { [Op.in]: statuses };
+      }
+
       return await PaymentAgreement.findAll({
-        where: { debtCaseId: { [Op.in]: debtCaseIds }, tenantId },
+        where: whereClause,
         include: [
           {
             model: DebtCase,

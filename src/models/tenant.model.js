@@ -34,6 +34,11 @@ export class Tenant extends Model {
           defaultValue: 'v1',
           field: 'collections_engine_version',
         },
+        stripeCustomerId: {
+          type: DataTypes.STRING(64),
+          allowNull: true,
+          field: 'stripe_customer_id',
+        },
         createdAt: {
           type: DataTypes.DATE,
           field: 'created_at',

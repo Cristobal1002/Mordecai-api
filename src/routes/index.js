@@ -20,6 +20,7 @@ import authRoutes from '../modules/auth/auth.routes.js';
 import membershipRoutes from '../modules/memberships/membership.routes.js';
 import brandingRoutes from '../modules/branding/branding.routes.js';
 import billingRoutes from '../modules/billing/billing.routes.js';
+import stripeWebhookRoutes from '../modules/billing/stripe-webhook.routes.js';
 import invitationRoutes from '../modules/invitations/invitation.routes.js';
 import twilioRoutes from '../modules/twilio/twilio.routes.js';
 import catalogRoutes from '../modules/catalog/catalog.routes.js';
@@ -43,6 +44,7 @@ const routes = (app) => {
   router.use('/tenants', membershipRoutes);
   router.use('/tenants', brandingRoutes);
   router.use('/tenants', billingRoutes);
+  router.use('/', stripeWebhookRoutes);
   router.use('/invitations', invitationRoutes);
   router.use('/tenants', flowPolicyRoutes);
   router.use('/tenants', strategyRoutes);

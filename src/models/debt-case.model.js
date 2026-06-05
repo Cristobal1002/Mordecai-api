@@ -140,6 +140,17 @@ export class DebtCase extends Model {
           allowNull: true,
           field: 'risk_tier',
         },
+        internalNotes: {
+          type: DataTypes.TEXT,
+          allowNull: true,
+          field: 'internal_notes',
+        },
+        mordecaiOperationalActive: {
+          type: DataTypes.BOOLEAN,
+          allowNull: false,
+          defaultValue: false,
+          field: 'mordecai_operational_active',
+        },
         createdAt: {
           type: DataTypes.DATE,
           field: 'created_at',
@@ -175,6 +186,10 @@ export class DebtCase extends Model {
             unique: true,
             fields: ['tenant_id', 'external_key'],
             name: 'idx_debt_cases_tenant_external_key',
+          },
+          {
+            fields: ['tenant_id', 'mordecai_operational_active'],
+            name: 'idx_debt_cases_tenant_mordecai_operational',
           },
         ],
       }

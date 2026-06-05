@@ -72,6 +72,19 @@ const MONTH_NAMES = {
   october: 10, oct: 10,
   november: 11, nov: 11,
   december: 12, dec: 12,
+  // Spanish (common in calls even for US tenants)
+  enero: 1, ene: 1,
+  febrero: 2, feb: 2,
+  marzo: 3, mar: 3,
+  abril: 4, abr: 4,
+  mayo: 5, may: 5,
+  junio: 6, jun: 6,
+  julio: 7, jul: 7,
+  agosto: 8, ago: 8,
+  septiembre: 9, setiembre: 9, sep: 9, sept: 9,
+  octubre: 10, oct: 10,
+  noviembre: 11, nov: 11,
+  diciembre: 12, dic: 12,
 };
 
 const getNegotiationCalendarTodayParts = () => {
@@ -83,6 +96,51 @@ const getNegotiationCalendarTodayParts = () => {
   }).format(new Date());
   const [y, m, d] = ymd.split("-").map((x) => parseInt(x, 10));
   return { currentYear: y, currentMonth: m, todayDay: d };
+};
+
+const getNegotiationTodayYmd = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: NEGOTIATION_CALENDAR_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+/** Tomorrow YYYY-MM-DD in negotiation TZ (calendar day, not UTC day). */
+const getNegotiationTomorrowYmd = () => {
+  const today = getNegotiationTodayYmd();
+  const [y, m, d] = today.split("-").map((x) => parseInt(x, 10));
+  const next = new Date(Date.UTC(y, m - 1, d + 1));
+  return next.toISOString().slice(0, 10);
+};
+
+const getNegotiationTodayWeekdayIndex = () => {
+  const wd = new Intl.DateTimeFormat("en-US", {
+    timeZone: NEGOTIATION_CALENDAR_TZ,
+    weekday: "short",
+  }).format(new Date());
+  const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return map[wd] ?? null;
+};
+
+const addDaysToNegotiationTodayYmd = (daysToAdd) => {
+  const today = getNegotiationTodayYmd();
+  const [y, m, d] = today.split("-").map((x) => parseInt(x, 10));
+  const next = new Date(Date.UTC(y, m - 1, d + Number(daysToAdd || 0)));
+  return next.toISOString().slice(0, 10);
+};
+
+const getLastCalendarDayOfCurrentMonthYmd = () => {
+  const { currentYear: y, currentMonth: m } = getNegotiationCalendarTodayParts();
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null;
+  const lastD = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${y}-${String(m).padStart(2, "0")}-${String(lastD).padStart(2, "0")}`;
+};
+
+const withinCurrentMonthCap = (ymd) => {
+  const cap = getLastCalendarDayOfCurrentMonthYmd();
+  if (!cap || !ymd) return false;
+  return String(ymd) <= String(cap);
 };
 
 /** Reject impossible dates (e.g. Feb 31) — JS Date rolls over silently. */
@@ -135,10 +193,77 @@ const extractFirstDueDateFromText = (text) => {
 
   const lower = s.toLowerCase();
 
+  // Relative dates (explicit, common in calls)
+  if (/\b(today)\b/.test(lower) || /\b(hoy)\b/.test(lower)) {
+    const ymd = getNegotiationTodayYmd();
+    return withinCurrentMonthCap(ymd) ? ymd : null;
+  }
+  if (/\b(tomorrow)\b/.test(lower) || /\b(mañana)\b/.test(lower) || /\b(manana)\b/.test(lower)) {
+    const ymd = getNegotiationTomorrowYmd();
+    return withinCurrentMonthCap(ymd) ? ymd : null;
+  }
+  // "in 3 days" / "in three days" (we only support numeric); Spanish "en 3 dias"
+  const inDays = lower.match(/\bin\s+(\d{1,3})\s+day(?:s)?\b/);
+  if (inDays) {
+    const n = Math.max(0, Math.min(365, parseInt(inDays[1], 10)));
+    const ymd = addDaysToNegotiationTodayYmd(n);
+    return withinCurrentMonthCap(ymd) ? ymd : null;
+  }
+  const enDias = lower.match(/\ben\s+(\d{1,3})\s+d[ií]a(?:s)?\b/);
+  if (enDias) {
+    const n = Math.max(0, Math.min(365, parseInt(enDias[1], 10)));
+    const ymd = addDaysToNegotiationTodayYmd(n);
+    return withinCurrentMonthCap(ymd) ? ymd : null;
+  }
+
+  // Weekday relative: "next tuesday", "next tue", Spanish "el próximo martes"
+  const WEEKDAYS = {
+    sunday: 0, sun: 0, domingo: 0, dom: 0,
+    monday: 1, mon: 1, lunes: 1, lun: 1,
+    tuesday: 2, tue: 2, tues: 2, martes: 2, mar: 2,
+    wednesday: 3, wed: 3, miercoles: 3, miércoles: 3, mie: 3, mié: 3,
+    thursday: 4, thu: 4, thur: 4, thurs: 4, jueves: 4, jue: 4,
+    friday: 5, fri: 5, viernes: 5, vie: 5,
+    saturday: 6, sat: 6, sabado: 6, sábado: 6, sab: 6, sáb: 6,
+  };
+  const weekdayKeys = Object.keys(WEEKDAYS).join("|");
+  const nextWeekday = lower.match(new RegExp(`\\b(?:next|pr[oó]ximo)\\s+(${weekdayKeys})\\b`, "i"));
+  if (nextWeekday) {
+    const target = WEEKDAYS[String(nextWeekday[1] || "").toLowerCase()];
+    const todayW = getNegotiationTodayWeekdayIndex();
+    if (target != null && todayW != null) {
+      let delta = (target - todayW + 7) % 7;
+      if (delta === 0) delta = 7;
+      const ymd = addDaysToNegotiationTodayYmd(delta);
+      return withinCurrentMonthCap(ymd) ? ymd : null;
+    }
+  }
+
+  // Spanish: "15 de mayo", "el 15 de mayo", optional year.
+  // Keep this before month-name English patterns so it wins when "de" is present.
+  const monthNamesAll = Object.keys(MONTH_NAMES).join("|");
+  const dayDeMonth = new RegExp(
+    `\\b(?:el\\s+)?(\\d{1,2})(?:\\s+de\\s+)?(${monthNamesAll})(?:\\s+(\\d{4}))?\\b`,
+    "i",
+  );
+  const mdm = lower.match(dayDeMonth);
+  if (mdm) {
+    const day = parseInt(mdm[1], 10);
+    const month = MONTH_NAMES[mdm[2].toLowerCase()];
+    const year = mdm[3]
+      ? parseInt(mdm[3], 10)
+      : month < currentMonth
+        ? currentYear + 1
+        : currentYear;
+    if (month) {
+      const ymd = ymdIfValidCalendar(year, month, day);
+      if (ymd) return ymd;
+    }
+  }
+
   // "May 15", "May 15th", "15th of May", "15 May"
-  const monthNames = Object.keys(MONTH_NAMES).join("|");
-  const monthThenDay = new RegExp(`\\b(${monthNames})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+(\\d{4}))?\\b`, "i");
-  const dayThenMonth = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${monthNames})(?:\\s+(\\d{4}))?\\b`, "i");
+  const monthThenDay = new RegExp(`\\b(${monthNamesAll})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+(\\d{4}))?\\b`, "i");
+  const dayThenMonth = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${monthNamesAll})(?:\\s+(\\d{4}))?\\b`, "i");
 
   const m1 = lower.match(monthThenDay);
   if (m1) {
@@ -170,8 +295,10 @@ const extractFirstDueDateFromText = (text) => {
     }
   }
 
-  // "the 15th", "on the 10th" — use current or next month context
-  const ordinalOnly = lower.match(/\bthe\s+(\d{1,2})(?:st|nd|rd|th)?\b/);
+  // "the 15th", "on the 10th", Spanish "el 15" — use current or next month context
+  const ordinalOnly =
+    lower.match(/\bthe\s+(\d{1,2})(?:st|nd|rd|th)?\b/) ||
+    lower.match(/\bel\s+(\d{1,2})\b/);
   if (!ordinalOnly) {
     const bareOrdinal = lower.match(/\b(\d{1,2})(?:st|nd|rd|th)\b/);
     if (bareOrdinal) {

@@ -592,6 +592,7 @@ const buildDemoCaseContext = async (input) => {
     daysPastDue: input.daysPastDue,
     dueDate: input.dueDate,
     status: 'IN_PROGRESS',
+    mordecaiOperationalActive: true,
     nextActionAt: new Date(),
     meta: {
       source: 'demo-ui',

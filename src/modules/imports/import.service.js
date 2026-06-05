@@ -377,6 +377,7 @@ export const importService = {
                                 daysPastDue,
                                 dueDate,
                                 status: 'NEW',
+                                mordecaiOperationalActive: false,
                                 nextActionAt: new Date(),
                                 flowPolicyId,
                                 meta: caseMeta,
