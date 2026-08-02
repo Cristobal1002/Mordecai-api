@@ -56,6 +56,72 @@ const getBaseUrls = () => {
   return { frontend, api };
 };
 
+/** Test customer/sub IDs stored in DB are invisible when prod uses live Stripe keys. */
+const isStripeMissingResource = (err) =>
+  err?.code === 'resource_missing' ||
+  err?.statusCode === 404 ||
+  /no such (customer|subscription|price)/i.test(String(err?.message || ''));
+
+const clearStripeBillingLinks = async (tenantId) => {
+  await TenantSubscription.update(
+    {
+      stripeSubscriptionId: null,
+      stripePlatformItemId: null,
+      stripeUnitsItemId: null,
+      stripeCallsItemId: null,
+      stripeWlItemId: null,
+      stripeSeatsItemId: null,
+    },
+    { where: { tenantId } },
+  );
+};
+
+/**
+ * Returns a customer id valid for the current Stripe mode (test/live).
+ * Clears stale DB links when the stored customer only exists in the other mode.
+ */
+const resolveStripeCustomerId = async (stripe, tenant) => {
+  const existingId = tenant.stripeCustomerId;
+  if (!existingId) return null;
+  try {
+    await stripe.customers.retrieve(existingId);
+    return existingId;
+  } catch (err) {
+    if (!isStripeMissingResource(err)) throw err;
+    await tenant.update({ stripeCustomerId: null });
+    await clearStripeBillingLinks(tenant.id);
+    return null;
+  }
+};
+
+const createStripeCustomerForTenant = async (stripe, tenant) => {
+  const customer = await stripe.customers.create({
+    name: tenant.name,
+    metadata: { tenant_id: tenant.id },
+  });
+  await tenant.update({ stripeCustomerId: customer.id });
+  return customer.id;
+};
+
+const ensureStripeCustomerId = async (stripe, tenant) => {
+  const resolved = await resolveStripeCustomerId(stripe, tenant);
+  if (resolved) return resolved;
+  return createStripeCustomerForTenant(stripe, tenant);
+};
+
+/** Drop test-mode subscription ids that are invalid after switching to live keys. */
+const reconcileStaleStripeSubscription = async (stripe, tenantId, sub) => {
+  if (!sub.stripeSubscriptionId) return sub;
+  try {
+    await stripe.subscriptions.retrieve(sub.stripeSubscriptionId);
+    return sub;
+  } catch (err) {
+    if (!isStripeMissingResource(err)) throw err;
+    await clearStripeBillingLinks(tenantId);
+    return sub.reload();
+  }
+};
+
 const requireTenantWithSubscription = async (tenantId) => {
   const tenant = await Tenant.findByPk(tenantId, { attributes: ['id', 'name', 'stripeCustomerId'] });
   if (!tenant) throw new NotFoundError('Tenant');
@@ -104,20 +170,13 @@ export const stripeBillingService = {
       throw new ConflictError('Missing FRONTEND_APP_URL or PAYMENTS_BASE_URL for checkout redirect');
     }
 
-    const { tenant, sub, seats } = await requireTenantWithSubscription(tenantId);
+    let { tenant, sub, seats } = await requireTenantWithSubscription(tenantId);
+    sub = await reconcileStaleStripeSubscription(stripe, tenantId, sub);
     if (sub.stripeSubscriptionId) {
       throw new ConflictError('Tenant already has an active Stripe subscription');
     }
 
-    let customerId = tenant.stripeCustomerId || null;
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        name: tenant.name,
-        metadata: { tenant_id: tenant.id },
-      });
-      customerId = customer.id;
-      await tenant.update({ stripeCustomerId: customerId });
-    }
+    let customerId = await ensureStripeCustomerId(stripe, tenant);
 
     let items;
     try {
@@ -168,7 +227,8 @@ export const stripeBillingService = {
 
     const returnUrl = `${frontend.replace(/\/+$/, '')}/settings/billing?stripe=success`;
 
-    const { tenant, sub, seats } = await requireTenantWithSubscription(tenantId);
+    let { tenant, sub, seats } = await requireTenantWithSubscription(tenantId);
+    sub = await reconcileStaleStripeSubscription(stripe, tenantId, sub);
 
     let items;
     try {
@@ -180,15 +240,7 @@ export const stripeBillingService = {
       throw err;
     }
 
-    let customerId = tenant.stripeCustomerId || null;
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        name: tenant.name,
-        metadata: { tenant_id: tenant.id },
-      });
-      customerId = customer.id;
-      await tenant.update({ stripeCustomerId: customerId });
-    }
+    let customerId = await ensureStripeCustomerId(stripe, tenant);
 
     const lineItems = items.map((i) => ({ price: i.price, quantity: i.quantity ?? 1 }));
 
@@ -207,9 +259,24 @@ export const stripeBillingService = {
     };
 
     if (sub.stripeSubscriptionId) {
-      const existing = await stripe.subscriptions.retrieve(sub.stripeSubscriptionId, {
-        expand: ['latest_invoice.payment_intent'],
-      });
+      let existing;
+      try {
+        existing = await stripe.subscriptions.retrieve(sub.stripeSubscriptionId, {
+          expand: ['latest_invoice.payment_intent'],
+        });
+      } catch (err) {
+        if (!isStripeMissingResource(err)) throw err;
+        await sub.update({ stripeSubscriptionId: null });
+        await clearStripeBillingLinks(tenantId);
+        const { clientSecret, subscriptionId } = await createFreshSubscription();
+        return {
+          clientSecret,
+          publishableKey,
+          subscriptionId,
+          returnUrl,
+          resumed: false,
+        };
+      }
 
       if (existing.status === 'active' || existing.status === 'trialing') {
         throw new ConflictError('Tenant already has an active Stripe subscription');
@@ -258,14 +325,18 @@ export const stripeBillingService = {
       throw new ConflictError('Missing FRONTEND_APP_URL or PAYMENTS_BASE_URL for portal redirect');
     }
 
-    const tenant = await Tenant.findByPk(tenantId, { attributes: ['id', 'stripeCustomerId'] });
+    const tenant = await Tenant.findByPk(tenantId, { attributes: ['id', 'name', 'stripeCustomerId'] });
     if (!tenant) throw new NotFoundError('Tenant');
-    if (!tenant.stripeCustomerId) {
-      throw new ConflictError('Tenant does not have a Stripe customer yet');
+
+    const customerId = await resolveStripeCustomerId(stripe, tenant);
+    if (!customerId) {
+      throw new ConflictError(
+        'Stripe billing is not linked in this environment (common after switching test → live). Use Subscribe in Billing to set up live billing.'
+      );
     }
 
     const session = await stripe.billingPortal.sessions.create({
-      customer: tenant.stripeCustomerId,
+      customer: customerId,
       return_url: `${frontend.replace(/\/+$/, '')}/settings/billing`,
     });
     return { portalUrl: session.url };
